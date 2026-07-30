@@ -1,0 +1,338 @@
+import { createAgent, type OfficeAgent } from "@/features/office/core/agents";
+import {
+  createPlacedObject,
+  type ObjectType,
+  type PlacedObject,
+} from "@/features/office/core/objects";
+import { createRoomBoundary } from "@/features/office/core/roomBoundaries";
+
+export type RoomPresetId =
+  | "empty"
+  | "ceo"
+  | "manager"
+  | "engineering"
+  | "finance"
+  | "meeting"
+  | "kitchen"
+  | "kitchen_manager";
+
+export type RoomPreset = {
+  id: RoomPresetId;
+  label: string;
+  description: string;
+  objects: PlacedObject[];
+  agents: OfficeAgent[];
+  /** Suggested wall style label for Tools. */
+  wallStyle: ObjectType;
+};
+
+let presetSeq = 0;
+
+function place(
+  type: ObjectType,
+  x: number,
+  z: number,
+  rotationY = 0,
+  elevation = 0,
+): PlacedObject {
+  presetSeq += 1;
+  return createPlacedObject(type, presetSeq, {
+    x,
+    z,
+    rotationY,
+    elevation,
+  });
+}
+
+function deskStation(cx: number, cz: number, facing = 180): PlacedObject[] {
+  const deskTop = 0.75;
+  return [
+    place("desk_cubicle", cx, cz, 0, 0),
+    place("chair", cx, cz + (facing === 180 ? 1.1 : -1.1), facing, 0),
+    place("computer", cx, cz - 0.15, 0, deskTop),
+    place("keyboard", cx + 0.15, cz + 0.15, 0, deskTop),
+    place("mouse", cx + 0.55, cz + 0.15, 0, deskTop),
+    place("mug", cx - 0.55, cz + 0.1, 0, deskTop),
+  ];
+}
+
+function withRoom(
+  wallType: Extract<
+    ObjectType,
+    "wall_solid" | "wall_glass" | "wall_brick" | "wall_drywall" | "wall_partition"
+  >,
+  innerW: number,
+  innerD: number,
+  furniture: PlacedObject[],
+  agents: OfficeAgent[],
+  doorSide: "n" | "s" | "e" | "w" = "s",
+): { objects: PlacedObject[]; agents: OfficeAgent[] } {
+  return {
+    objects: [
+      ...createRoomBoundary({
+        innerW,
+        innerD,
+        wallType,
+        doorSide,
+      }),
+      ...furniture,
+    ],
+    agents,
+  };
+}
+
+export const ROOM_PRESETS: readonly RoomPreset[] = [
+  {
+    id: "empty",
+    label: "خالی",
+    description: "اتاق خالی با دیوار گچی و در",
+    wallStyle: "wall_drywall",
+    ...withRoom("wall_drywall", 18, 12, [], []),
+  },
+  {
+    id: "ceo",
+    label: "دفتر مدیرعامل",
+    description: "اتاق محصور شیشه‌ای با میز مدیریت و مبل",
+    wallStyle: "wall_glass",
+    ...withRoom(
+      "wall_glass",
+      22,
+      14,
+      [
+        place("executive_desk", 0, -2, 0, 0),
+        place("chair", 0, -0.6, 180, 0),
+        place("computer", 0, -2.2, 0, 0.78),
+        place("keyboard", 0.2, -1.85, 0, 0.78),
+        place("mouse", 0.55, -1.85, 0, 0.78),
+        place("couch", -4.5, 2.5, 90, 0),
+        place("couch", 4.5, 2.5, 270, 0),
+        place("table_rect", 0, 2.5, 0, 0),
+        place("bookshelf", -7, -4, 0, 0),
+        place("plant", 7, -4, 0, 0),
+        place("plant", -7, 4, 0, 0),
+        place("lamp", 5, -1, 0, 0),
+        place("whiteboard", -8.5, 0, 90, 0),
+      ],
+      [
+        createAgent(0, { name: "مدیرعامل", color: "#ffb74d", x: 0, z: 1, homeX: 0, homeZ: 1 }),
+        createAgent(1, { name: "منشی", color: "#4fc3f7", x: 3, z: 3, homeX: 3, homeZ: 3 }),
+      ],
+      "s",
+    ),
+  },
+  {
+    id: "manager",
+    label: "دفتر مدیریت",
+    description: "اتاق گچی با میز مدیریت و مهمان",
+    wallStyle: "wall_drywall",
+    ...withRoom(
+      "wall_drywall",
+      18,
+      12,
+      [
+        place("executive_desk", -2, 0, 0, 0),
+        place("chair", -2, 1.4, 180, 0),
+        place("computer", -2, -0.25, 0, 0.78),
+        place("keyboard", -1.8, 0.15, 0, 0.78),
+        place("mouse", -1.4, 0.15, 0, 0.78),
+        place("chair", 2, -1, 270, 0),
+        place("chair", 2, 1, 270, 0),
+        place("bookshelf", -6, -3, 0, 0),
+        place("plant", 5.5, -3.5, 0, 0),
+        place("whiteboard", 7, 0, 90, 0),
+        place("trash", -4, 1.5, 0, 0),
+      ],
+      [createAgent(0, { name: "مدیر", color: "#81c784", x: -2, z: 2.5 })],
+    ),
+  },
+  {
+    id: "engineering",
+    label: "تیم برنامه‌نویسی",
+    description: "سالن پارتیشن‌شده با چند میز توسعه",
+    wallStyle: "wall_partition",
+    ...withRoom(
+      "wall_partition",
+      28,
+      16,
+      [
+        ...deskStation(-8, -3),
+        ...deskStation(-3, -3),
+        ...deskStation(2, -3),
+        ...deskStation(7, -3),
+        ...deskStation(-8, 4, 0),
+        ...deskStation(-3, 4, 0),
+        place("kanban_board", 10, 0, 90, 0),
+        place("printer", 10, -4, 0, 0),
+        place("water_cooler", 10, 4, 0, 0),
+        place("plant", -11, 0, 0, 0),
+        place("trash", 0, 0.5, 0, 0),
+      ],
+      [
+        createAgent(0, { name: "فرانت", color: "#4fc3f7", x: -8, z: 0 }),
+        createAgent(1, { name: "بک‌اند", color: "#ce93d8", x: -3, z: 0 }),
+        createAgent(2, { name: "دولوپر", color: "#81c784", x: 2, z: 1 }),
+      ],
+    ),
+  },
+  {
+    id: "finance",
+    label: "دفتر مدیر مالی",
+    description: "اتاق آجری با کابینت اسناد",
+    wallStyle: "wall_brick",
+    ...withRoom(
+      "wall_brick",
+      16,
+      12,
+      [
+        place("executive_desk", 0, -1, 0, 0),
+        place("chair", 0, 0.5, 180, 0),
+        place("computer", 0, -1.25, 0, 0.78),
+        place("keyboard", 0.2, -0.85, 0, 0.78),
+        place("mouse", 0.55, -0.85, 0, 0.78),
+        place("cabinet", -5, 2, 0, 0),
+        place("bookshelf", 5, -3, 0, 0),
+        place("printer", 4, 2, 0, 0),
+        place("plant", -5, -3.5, 0, 0),
+        place("lamp", 3, -1, 0, 0),
+        place("trash", 2, 1, 0, 0),
+      ],
+      [createAgent(0, { name: "مالی", color: "#ffb74d", x: 1, z: 2 })],
+    ),
+  },
+  {
+    id: "meeting",
+    label: "اتاق جلسه",
+    description: "اتاق شیشه‌ای با میز گرد",
+    wallStyle: "wall_glass",
+    ...withRoom(
+      "wall_glass",
+      16,
+      14,
+      [
+        place("round_table", 0, 0, 0, 0),
+        place("chair", 2.2, 0, 270, 0),
+        place("chair", -2.2, 0, 90, 0),
+        place("chair", 0, 2.2, 180, 0),
+        place("chair", 0, -2.2, 0, 0),
+        place("chair", 1.6, 1.6, 225, 0),
+        place("chair", -1.6, 1.6, 135, 0),
+        place("chair", 1.6, -1.6, 315, 0),
+        place("chair", -1.6, -1.6, 45, 0),
+        place("whiteboard", -6.5, 0, 90, 0),
+        place("plant", 5.5, -4, 0, 0),
+        place("plant", 5.5, 4, 0, 0),
+      ],
+      [
+        createAgent(0, { name: "هماهنگ‌کننده", x: 3, z: 3 }),
+        createAgent(1, { name: "مهمان", color: "#ef9a9a", x: -3, z: -2 }),
+      ],
+    ),
+  },
+  {
+    id: "kitchen",
+    label: "آشپزخانه اداری",
+    description: "فضای گچی با کابینت و میز ناهار",
+    wallStyle: "wall_drywall",
+    ...withRoom(
+      "wall_drywall",
+      18,
+      12,
+      [
+        place("cabinet", -4, -4, 0, 0),
+        place("coffee_machine", -5, -4, 0, 0.9),
+        place("microwave", -3, -4, 0, 0.9),
+        place("fridge", 2, -4, 0, 0),
+        place("sink", 4.5, -4, 0, 0),
+        place("dishwasher", 6.5, -4, 0, 0),
+        place("vending", 7, 1, 90, 0),
+        place("water_cooler", 7, 3.5, 0, 0),
+        place("round_table", -2, 2.5, 0, 0),
+        place("chair", 0, 2.5, 270, 0),
+        place("chair", -4, 2.5, 90, 0),
+        place("trash", 0, -2, 0, 0),
+        place("plant", -7, 3.5, 0, 0),
+      ],
+      [createAgent(0, { name: "استراحت", color: "#80cbc4", x: -2, z: 1 })],
+    ),
+  },
+  {
+    id: "kitchen_manager",
+    label: "آشپزخانه + مدیریت",
+    description:
+      "دو اتاق کنار هم با راهرو؛ مهماندار در آشپزخانه و مدیر پشت میز",
+    wallStyle: "wall_drywall",
+    ...(() => {
+      const kitchenShifted = {
+        objects: createRoomBoundary({
+          cx: -14,
+          cz: 0,
+          innerW: 12,
+          innerD: 10,
+          wallType: "wall_drywall",
+          doorSide: "e",
+        }).concat([
+          place("cabinet", -16, -3, 0, 0),
+          place("coffee_machine", -17, -3, 0, 0.9),
+          place("microwave", -15, -3, 0, 0.9),
+          place("fridge", -12, -3, 0, 0),
+          place("sink", -10, -3, 0, 0),
+          place("round_table", -14, 1.5, 0, 0),
+          place("chair", -12.2, 1.5, 270, 0),
+          place("chair", -15.8, 1.5, 90, 0),
+          place("water_cooler", -10, 2.5, 0, 0),
+          place("plant", -17.5, 2.5, 0, 0),
+          place("lamp", -11, 1, 0, 0),
+        ]),
+        agents: [
+          createAgent(0, {
+            name: "مهماندار",
+            color: "#80cbc4",
+            x: -14,
+            z: 0,
+            homeX: -14,
+            homeZ: 0,
+          }),
+        ],
+      };
+      const managerRoom = {
+        objects: createRoomBoundary({
+          cx: 10,
+          cz: 0,
+          innerW: 14,
+          innerD: 12,
+          wallType: "wall_brick",
+          doorSide: "w",
+        }).concat([
+          place("executive_desk", 10, -1.5, 0, 0),
+          place("chair", 10, 0.2, 180, 0),
+          place("computer", 10, -1.8, 0, 0.78),
+          place("keyboard", 10.2, -1.4, 0, 0.78),
+          place("mouse", 10.55, -1.4, 0, 0.78),
+          place("bookshelf", 14.5, -3.5, 0, 0),
+          place("plant", 5.5, -4, 0, 0),
+          place("couch", 10, 4, 180, 0),
+          place("lamp", 13, -1, 0, 0),
+          place("mug", 9.4, -1.3, 0, 0.78),
+        ]),
+        agents: [
+          createAgent(1, {
+            name: "مدیر",
+            color: "#4fc3f7",
+            x: 10,
+            z: 1.2,
+            homeX: 10,
+            homeZ: 1.2,
+          }),
+        ],
+      };
+      return {
+        objects: [...kitchenShifted.objects, ...managerRoom.objects],
+        agents: [...kitchenShifted.agents, ...managerRoom.agents],
+      };
+    })(),
+  },
+];
+
+export function getRoomPreset(id: RoomPresetId): RoomPreset {
+  return ROOM_PRESETS.find((preset) => preset.id === id) ?? ROOM_PRESETS[0]!;
+}
