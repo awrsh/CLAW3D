@@ -18,21 +18,24 @@ import { ROOM_PRESETS } from "@/features/office/core/roomPresets";
 import {
   applyPresetToFloor,
   createFloor,
-  DEFAULT_BUILDING,
   duplicateFloor,
   getActiveFloor,
   getSelectedObject,
+  isDrawWallType,
   MAX_FLOORS,
   ROOM_LIMITS,
   type BuildingConfig,
   type FloorConfig,
   type StructureConfig,
+  type WorkspaceUnit,
 } from "@/features/office/core/roomConfig";
 
 type RoomToolsPanelProps = {
   building: BuildingConfig;
   onChange: (next: BuildingConfig) => void;
   onReset: () => void;
+  open?: boolean;
+  onClose?: () => void;
   /** Snapshot current building before an object transform edit (for Ctrl+Z). */
   onBeforeObjectEdit?: () => void;
 };
@@ -59,8 +62,10 @@ function NumberField({
   return (
     <label className="block space-y-1.5">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-medium text-[#e8dcc8]">{label}</span>
-        <span className="font-mono text-[11px] text-[#c8a97e]">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
+          {label}
+        </span>
+        <span className="font-mono text-[10px] text-amber-400/80">
           {value.toFixed(2)}
         </span>
       </div>
@@ -72,7 +77,7 @@ function NumberField({
         value={value}
         onPointerDown={onEditStart}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#3a2a22] accent-[#c8a97e]"
+        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-amber-950/50 accent-amber-500"
       />
       <div className="flex items-center gap-2">
         <input
@@ -88,10 +93,12 @@ function NumberField({
               onChange(Math.min(max, Math.max(min, next)));
             }
           }}
-          className="w-full rounded border border-[#5d4037]/70 bg-[#140e0a] px-2 py-1.5 font-mono text-xs text-[#f5f0e8] outline-none focus:border-[#c8a97e]"
+          className="w-full rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 font-mono text-[11px] text-amber-100 outline-none focus:border-amber-500/50"
         />
         {hint ? (
-          <span className="shrink-0 text-[10px] text-[#9a8b78]">{hint}</span>
+          <span className="shrink-0 text-[9px] uppercase tracking-wider text-amber-500/50">
+            {hint}
+          </span>
         ) : null}
       </div>
     </label>
@@ -109,19 +116,21 @@ function ColorField({
 }) {
   return (
     <label className="flex items-center justify-between gap-3">
-      <span className="text-[11px] font-medium text-[#e8dcc8]">{label}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
+        {label}
+      </span>
       <span className="flex items-center gap-2">
         <input
           type="color"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="h-8 w-10 cursor-pointer rounded border border-[#5d4037]/70 bg-transparent p-0.5"
+          className="h-7 w-9 cursor-pointer rounded border border-amber-900/25 bg-transparent p-0.5"
         />
         <input
           type="text"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="w-[7.5rem] rounded border border-[#5d4037]/70 bg-[#140e0a] px-2 py-1.5 font-mono text-xs text-[#f5f0e8] outline-none focus:border-[#c8a97e]"
+          className="w-[7.5rem] rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 font-mono text-[11px] text-amber-100 outline-none focus:border-amber-500/50"
         />
       </span>
     </label>
@@ -135,12 +144,18 @@ export function RoomToolsPanel({
   building,
   onChange,
   onReset,
+  open = true,
+  onClose,
   onBeforeObjectEdit,
 }: RoomToolsPanelProps) {
   const [objectCategory, setObjectCategory] =
     useState<ObjectCategory>("structure");
   const active = getActiveFloor(building);
   const selected = getSelectedObject(building);
+  const workspaces = active.workspaces ?? [];
+  const selectedWorkspace =
+    workspaces.find((unit) => unit.id === building.selectedWorkspaceId) ??
+    null;
   const catalogItems = useMemo(
     () => OBJECT_CATALOG.filter((item) => item.category === objectCategory),
     [objectCategory],
@@ -202,6 +217,7 @@ export function RoomToolsPanel({
       floors: [...building.floors, next],
       activeFloorId: next.id,
       selectedObjectId: null,
+      selectedWorkspaceId: null,
       structure: {
         ...building.structure,
         showStairs: true,
@@ -223,19 +239,72 @@ export function RoomToolsPanel({
       floors: remaining,
       activeFloorId: remaining[remaining.length - 1]!.id,
       selectedObjectId: null,
+      selectedWorkspaceId: null,
+    });
+  };
+
+  const patchWorkspace = <K extends keyof WorkspaceUnit>(
+    workspaceId: string,
+    key: K,
+    value: WorkspaceUnit[K],
+  ) => {
+    onChange({
+      ...building,
+      floors: building.floors.map((floor) =>
+        floor.id !== active.id
+          ? floor
+          : {
+              ...floor,
+              workspaces: (floor.workspaces ?? []).map((unit) =>
+                unit.id === workspaceId ? { ...unit, [key]: value } : unit,
+              ),
+            },
+      ),
+    });
+  };
+
+  const removeWorkspace = (workspaceId: string) => {
+    onChange({
+      ...building,
+      floors: building.floors.map((floor) =>
+        floor.id !== active.id
+          ? floor
+          : {
+              ...floor,
+              workspaces: (floor.workspaces ?? []).filter(
+                (unit) => unit.id !== workspaceId,
+              ),
+            },
+      ),
+      selectedWorkspaceId:
+        building.selectedWorkspaceId === workspaceId
+          ? null
+          : building.selectedWorkspaceId,
     });
   };
 
   const applyPreset = (presetId: (typeof ROOM_PRESETS)[number]["id"]) => {
     const preset = ROOM_PRESETS.find((entry) => entry.id === presetId);
     if (!preset) return;
+    const workspaceId = building.selectedWorkspaceId;
     onChange(
       applyPresetToFloor(
         building,
         active.id,
         preset.objects,
         preset.agents,
-        preset.id === "empty" ? active.label : preset.label,
+        workspaceId
+          ? undefined
+          : preset.id === "empty"
+            ? active.label
+            : preset.label,
+        workspaceId
+          ? {
+              workspaceId,
+              designWidth: preset.designWidth,
+              designDepth: preset.designDepth,
+            }
+          : undefined,
       ),
     );
   };
@@ -295,15 +364,30 @@ export function RoomToolsPanel({
   };
 
   const addObject = (type: ObjectType) => {
+    // Walls/doors: enter draw mode (drag like workspace) instead of instant spawn.
+    if (isDrawWallType(type)) {
+      const togglingOff =
+        building.drawMode === "wall" && building.drawWallType === type;
+      onChange({
+        ...building,
+        drawMode: togglingOff ? "none" : "wall",
+        drawWallType: type,
+        selectedObjectId: null,
+      });
+      return;
+    }
+
     const object = createPlacedObject(type, active.objects.length);
     onChange({
       ...building,
+      drawMode: "none",
       floors: building.floors.map((floor) =>
         floor.id === active.id
           ? { ...floor, objects: [...floor.objects, object] }
           : floor,
       ),
       selectedObjectId: object.id,
+      selectedWorkspaceId: null,
     });
   };
 
@@ -325,30 +409,46 @@ export function RoomToolsPanel({
     });
   };
 
+  if (!open) return null;
+
   return (
     <aside
       dir="rtl"
-      className="pointer-events-auto absolute bottom-4 left-4 z-20 flex max-h-[min(86vh,780px)] w-[min(100%-2rem,360px)] flex-col overflow-hidden rounded-xl border border-[#5d4037]/70 bg-[#1a1008]/92 shadow-2xl shadow-black/40 backdrop-blur-md"
+      className="pointer-events-auto absolute bottom-4 left-4 z-20 flex max-h-[min(86vh,780px)] w-[min(100%-2rem,340px)] flex-col overflow-hidden rounded-lg border border-amber-800/30 bg-[#120e08]/95 font-mono shadow-xl backdrop-blur-sm"
     >
-      <div className="flex items-center justify-between border-b border-[#5d4037]/50 px-3 py-2.5">
+      <div className="flex items-center justify-between border-b border-amber-900/20 px-3 py-2.5">
         <div>
-          <div className="text-sm font-semibold text-[#c8a97e]">Tools</div>
-          <div className="text-[10px] text-[#9a8b78]">
-            طبقات · سازه · ابجکت‌ها
+          <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-amber-300/80">
+            Tools
+          </div>
+          <div className="mt-0.5 text-[9px] uppercase tracking-[0.16em] text-amber-500/55">
+            Floors · Workspaces · Objects
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onReset}
-          className="rounded border border-[#5d4037]/70 px-2 py-1 text-[10px] text-[#d8d0c0] transition hover:border-[#c8a97e] hover:text-[#c8a97e]"
-        >
-          Reset
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onReset}
+            className="rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
+          >
+            Reset
+          </button>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
+              title="بستن پنل"
+            >
+              بستن
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="space-y-4 overflow-y-auto p-3">
         <section className="space-y-2">
-          <div className="text-[10px] font-semibold tracking-wide text-[#9a8b78]">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
             طبقات ساختمان
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -360,12 +460,13 @@ export function RoomToolsPanel({
                   patchBuilding({
                     activeFloorId: floor.id,
                     selectedObjectId: null,
+                    selectedWorkspaceId: null,
                   })
                 }
-                className={`rounded px-2 py-1 text-[10px] transition ${
+                className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition ${
                   floor.id === active.id
-                    ? "bg-[#c8a97e] text-[#1a1008]"
-                    : "border border-[#5d4037]/70 text-[#d8d0c0] hover:border-[#c8a97e]"
+                    ? "border border-amber-500/50 bg-amber-500/30 text-amber-300"
+                    : "border border-amber-900/25 bg-[#1c1610] text-amber-200/70 hover:border-amber-500/40 hover:bg-[#261e16]"
                 }`}
               >
                 {index}
@@ -377,7 +478,7 @@ export function RoomToolsPanel({
               type="button"
               onClick={addFloor}
               disabled={building.floors.length >= MAX_FLOORS}
-              className="flex-1 rounded border border-[#5d4037]/70 px-2 py-1.5 text-[10px] text-[#d8d0c0] transition hover:border-[#c8a97e] hover:text-[#c8a97e] disabled:opacity-40"
+              className="flex-1 rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300 disabled:opacity-40"
             >
               + طبقه جدید
             </button>
@@ -385,7 +486,7 @@ export function RoomToolsPanel({
               type="button"
               onClick={duplicateActiveFloor}
               disabled={building.floors.length >= MAX_FLOORS}
-              className="flex-1 rounded border border-[#5d4037]/70 px-2 py-1.5 text-[10px] text-[#d8d0c0] transition hover:border-[#c8a97e] hover:text-[#c8a97e] disabled:opacity-40"
+              className="flex-1 rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300 disabled:opacity-40"
             >
               کپی طبقه
             </button>
@@ -393,7 +494,7 @@ export function RoomToolsPanel({
               type="button"
               onClick={removeActiveFloor}
               disabled={building.floors.length <= 1}
-              className="rounded border border-[#5d4037]/70 px-2 py-1.5 text-[10px] text-[#d8d0c0] transition hover:border-[#c8a97e] hover:text-[#c8a97e] disabled:opacity-40"
+              className="rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300 disabled:opacity-40"
             >
               حذف
             </button>
@@ -402,7 +503,7 @@ export function RoomToolsPanel({
             type="text"
             value={active.label}
             onChange={(event) => patchActiveFloor("label", event.target.value)}
-            className="w-full rounded border border-[#5d4037]/70 bg-[#140e0a] px-2 py-1.5 text-xs text-[#f5f0e8] outline-none focus:border-[#c8a97e]"
+            className="w-full rounded border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/50"
             placeholder="نام طبقه"
           />
           <NumberField
@@ -415,7 +516,7 @@ export function RoomToolsPanel({
             onChange={(value) => patchBuilding({ floorSpacing: value })}
           />
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
               نمایش همهٔ طبقات با هم
             </span>
             <input
@@ -424,11 +525,11 @@ export function RoomToolsPanel({
               onChange={(event) =>
                 patchBuilding({ showAllFloors: event.target.checked })
               }
-              className="h-4 w-4 accent-[#c8a97e]"
+              className="h-4 w-4 accent-amber-500"
             />
           </label>
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
               Snap به گرید
             </span>
             <input
@@ -437,11 +538,11 @@ export function RoomToolsPanel({
               onChange={(event) =>
                 patchBuilding({ snapToGrid: event.target.checked })
               }
-              className="h-4 w-4 accent-[#c8a97e]"
+              className="h-4 w-4 accent-amber-500"
             />
           </label>
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
               Snap به دیوار
             </span>
             <input
@@ -450,11 +551,11 @@ export function RoomToolsPanel({
               onChange={(event) =>
                 patchBuilding({ snapToWall: event.target.checked })
               }
-              className="h-4 w-4 accent-[#c8a97e]"
+              className="h-4 w-4 accent-amber-500"
             />
           </label>
           <div className="space-y-1.5">
-            <div className="text-[11px] font-medium text-[#e8dcc8]">نور</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">نور</div>
             <div className="grid grid-cols-3 gap-1">
               {(
                 [
@@ -467,10 +568,10 @@ export function RoomToolsPanel({
                   key={mode}
                   type="button"
                   onClick={() => patchBuilding({ lightingMode: mode })}
-                  className={`rounded border px-2 py-1.5 text-[10px] transition ${
+                  className={`rounded-md border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition ${
                     building.lightingMode === mode
-                      ? "border-[#c8a97e] text-[#c8a97e]"
-                      : "border-[#5d4037]/70 text-[#d8d0c0] hover:border-[#c8a97e]"
+                      ? "border-amber-500/50 bg-amber-500/30 text-amber-300"
+                      : "border-amber-900/25 bg-[#1c1610] text-amber-200/70 hover:border-amber-500/40 hover:bg-[#261e16]"
                   }`}
                 >
                   {label}
@@ -479,7 +580,7 @@ export function RoomToolsPanel({
             </div>
           </div>
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
               لامپ‌ها روشن
             </span>
             <input
@@ -488,11 +589,11 @@ export function RoomToolsPanel({
               onChange={(event) =>
                 patchBuilding({ lampsOn: event.target.checked })
               }
-              className="h-4 w-4 accent-[#c8a97e]"
+              className="h-4 w-4 accent-amber-500"
             />
           </label>
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
               قطع صدا
             </span>
             <input
@@ -501,17 +602,126 @@ export function RoomToolsPanel({
               onChange={(event) =>
                 patchBuilding({ muteSfx: event.target.checked })
               }
-              className="h-4 w-4 accent-[#c8a97e]"
+              className="h-4 w-4 accent-amber-500"
             />
           </label>
         </section>
 
-        <section className="space-y-2 border-t border-[#5d4037]/40 pt-3">
-          <div className="text-[10px] font-semibold tracking-wide text-[#9a8b78]">
+        <section className="space-y-2 border-t border-amber-900/15 pt-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
+            محیط‌های کاری ({workspaces.length})
+          </div>
+          <p className="text-[10px] leading-5 text-amber-200/55">
+            با دکمهٔ «محیط کاری» روی صحنه رسم کنید. اینجا لیست و حذف است.
+          </p>
+          {workspaces.length === 0 ? (
+            <div className="rounded-md border border-dashed border-amber-900/25 px-2 py-2 text-[10px] text-amber-500/50">
+              هنوز واحدی روی این طبقه نیست.
+            </div>
+          ) : (
+            <ul className="space-y-1.5">
+              {workspaces.map((unit) => {
+                const isSelected = unit.id === building.selectedWorkspaceId;
+                return (
+                  <li
+                    key={unit.id}
+                    className={`rounded-md border px-2 py-1.5 ${
+                      isSelected
+                        ? "border-amber-500/45 bg-amber-500/15"
+                        : "border-amber-900/25 bg-[#1c1610]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          patchBuilding({
+                            selectedWorkspaceId: unit.id,
+                            selectedObjectId: null,
+                          })
+                        }
+                        className="min-w-0 flex-1 text-right text-[11px] text-amber-100 hover:text-amber-300"
+                      >
+                        <div className="truncate font-semibold">
+                          {unit.label}
+                        </div>
+                        <div className="mt-0.5 font-mono text-[9px] text-amber-500/60">
+                          {unit.width.toFixed(1)}×{unit.depth.toFixed(1)} ·{" "}
+                          {unit.shape === "square" ? "مربع" : "مستطیل"}
+                          {unit.withWalls ? " · دیوار" : ""}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeWorkspace(unit.id)}
+                        className="shrink-0 rounded border border-amber-900/25 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-200/70 hover:border-red-500/40 hover:text-red-300"
+                      >
+                        حذف
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {selectedWorkspace ? (
+            <div className="space-y-2 rounded-md border border-amber-900/20 bg-[#1c1610]/60 p-2">
+              <input
+                type="text"
+                value={selectedWorkspace.label}
+                onChange={(event) =>
+                  patchWorkspace(
+                    selectedWorkspace.id,
+                    "label",
+                    event.target.value,
+                  )
+                }
+                className="w-full rounded border border-amber-900/25 bg-[#120e08] px-2 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/50"
+                placeholder="برچسب واحد"
+              />
+              <ColorField
+                label="رنگ کف"
+                value={selectedWorkspace.floorColor}
+                onChange={(value) =>
+                  patchWorkspace(selectedWorkspace.id, "floorColor", value)
+                }
+              />
+              <ColorField
+                label="رنگ دیوار"
+                value={selectedWorkspace.wallColor}
+                onChange={(value) =>
+                  patchWorkspace(selectedWorkspace.id, "wallColor", value)
+                }
+              />
+              <label className="flex cursor-pointer items-center justify-between gap-3">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
+                  با دیوار
+                </span>
+                <input
+                  type="checkbox"
+                  checked={selectedWorkspace.withWalls}
+                  onChange={(event) =>
+                    patchWorkspace(
+                      selectedWorkspace.id,
+                      "withWalls",
+                      event.target.checked,
+                    )
+                  }
+                  className="h-4 w-4 accent-amber-500"
+                />
+              </label>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="space-y-2 border-t border-amber-900/15 pt-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
             فضاهای آماده
           </div>
-          <p className="text-[10px] leading-5 text-[#9a8b78]">
-            روی طبقهٔ فعال اعمال می‌شود و ابجکت‌های فعلی را جایگزین می‌کند.
+          <p className="text-[10px] leading-5 text-amber-500/55">
+            {selectedWorkspace
+              ? `واحد «${selectedWorkspace.label}» انتخاب شده — preset به ابعاد ${selectedWorkspace.width.toFixed(1)}×${selectedWorkspace.depth.toFixed(1)} همان واحد مقیاس می‌شود.`
+              : "بدون انتخاب واحد: روی کل طبقه اعمال می‌شود و ابجکت‌ها را جایگزین می‌کند. یک محیط کاری را انتخاب کنید تا فقط داخل آن پر شود."}
           </p>
           <div className="grid grid-cols-2 gap-1.5">
             {ROOM_PRESETS.map((preset) => (
@@ -520,7 +730,7 @@ export function RoomToolsPanel({
                 type="button"
                 title={preset.description}
                 onClick={() => applyPreset(preset.id)}
-                className="rounded border border-[#5d4037]/70 px-2 py-2 text-right text-[10px] text-[#d8d0c0] transition hover:border-[#c8a97e] hover:text-[#c8a97e]"
+                className="rounded-md border border-amber-900/20 bg-[#120e08] px-2 py-2 text-right text-[10px] text-amber-200/70 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
               >
                 {preset.label}
               </button>
@@ -528,19 +738,19 @@ export function RoomToolsPanel({
           </div>
         </section>
 
-        <section className="space-y-2 border-t border-[#5d4037]/40 pt-3">
-          <div className="text-[10px] font-semibold tracking-wide text-[#9a8b78]">
+        <section className="space-y-2 border-t border-amber-900/15 pt-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
             کاراکترها (حرکت و تعامل)
           </div>
           <button
             type="button"
             onClick={addAgent}
-            className="w-full rounded border border-[#5d4037]/70 px-2 py-1.5 text-[10px] text-[#d8d0c0] transition hover:border-[#c8a97e] hover:text-[#c8a97e]"
+            className="w-full rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
           >
             + کاراکتر جدید
           </button>
           {(active.agents ?? []).length === 0 ? (
-            <p className="text-[10px] text-[#9a8b78]">
+            <p className="text-[10px] text-amber-500/55">
               هنوز کاراکتری نیست — یا از فضاهای آماده استفاده کنید.
             </p>
           ) : (
@@ -548,17 +758,17 @@ export function RoomToolsPanel({
               {(active.agents ?? []).map((agent) => (
                 <div
                   key={agent.id}
-                  className="flex items-center gap-2 rounded border border-[#5d4037]/40 px-2 py-1 text-[10px]"
+                  className="flex items-center gap-2 rounded border border-amber-900/15 px-2 py-1 text-[10px]"
                 >
                   <span
                     className="h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: agent.color }}
                   />
-                  <span className="flex-1 text-[#e8dcc8]">{agent.name}</span>
+                  <span className="flex-1 text-amber-100">{agent.name}</span>
                   <button
                     type="button"
                     onClick={() => toggleAgentRoam(agent.id)}
-                    className="text-[#c8a97e]"
+                    className="text-amber-300/85"
                   >
                     {agent.roam ? "گشت" : "ثابت"}
                   </button>
@@ -575,23 +785,23 @@ export function RoomToolsPanel({
           )}
         </section>
 
-        <section className="space-y-3 border-t border-[#5d4037]/40 pt-3">
-          <div className="text-[10px] font-semibold tracking-wide text-[#9a8b78]">
+        <section className="space-y-3 border-t border-amber-900/15 pt-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
             اتصال طبقات (راه‌پله و ستون)
           </div>
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">راه‌پله</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">راه‌پله</span>
             <input
               type="checkbox"
               checked={building.structure.showStairs}
               onChange={(event) =>
                 patchStructure("showStairs", event.target.checked)
               }
-              className="h-4 w-4 accent-[#c8a97e]"
+              className="h-4 w-4 accent-amber-500"
             />
           </label>
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
               ستون‌های گوشه
             </span>
             <input
@@ -600,11 +810,11 @@ export function RoomToolsPanel({
               onChange={(event) =>
                 patchStructure("showColumns", event.target.checked)
               }
-              className="h-4 w-4 accent-[#c8a97e]"
+              className="h-4 w-4 accent-amber-500"
             />
           </label>
           <label className="block space-y-1.5">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
               گوشهٔ راه‌پله
             </span>
             <select
@@ -615,7 +825,7 @@ export function RoomToolsPanel({
                   event.target.value as StructureConfig["stairsCorner"],
                 )
               }
-              className="w-full rounded border border-[#5d4037]/70 bg-[#140e0a] px-2 py-1.5 text-xs text-[#f5f0e8] outline-none focus:border-[#c8a97e]"
+              className="w-full rounded border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/50"
             >
               <option value="se">جنوب‌شرقی</option>
               <option value="sw">جنوب‌غربی</option>
@@ -633,18 +843,18 @@ export function RoomToolsPanel({
             onChange={(value) => patchStructure("columnRadius", value)}
           />
           {building.floors.length < 2 ? (
-            <p className="text-[10px] leading-5 text-[#9a8b78]">
+            <p className="text-[10px] leading-5 text-amber-500/55">
               برای دیدن راه‌پله و ستون، حداقل یک طبقهٔ دیگر اضافه کنید و «نمایش
               همهٔ طبقات» را روشن بگذارید.
             </p>
           ) : null}
         </section>
 
-        <section className="space-y-3 border-t border-[#5d4037]/40 pt-3">
-          <div className="text-[10px] font-semibold tracking-wide text-[#9a8b78]">
+        <section className="space-y-3 border-t border-amber-900/15 pt-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
             ابجکت‌ها ({OBJECT_CATALOG.length} نوع — مثل old-version)
           </div>
-          <p className="text-[10px] leading-5 text-[#9a8b78]">
+          <p className="text-[10px] leading-5 text-amber-500/55">
             روی ابجکت کلیک‌نگه کنید و بکشید. کیبورد/ماوس/مانیتور را روی میز رها
             کنید تا خودکار روی سطح بنشیند. ارتفاع را از اسلایدر Elevation هم
             می‌توانید تنظیم کنید.
@@ -657,8 +867,8 @@ export function RoomToolsPanel({
                 onClick={() => setObjectCategory(category.id)}
                 className={`rounded px-2 py-1 text-[10px] transition ${
                   objectCategory === category.id
-                    ? "bg-[#c8a97e] text-[#1a1008]"
-                    : "border border-[#5d4037]/70 text-[#d8d0c0] hover:border-[#c8a97e]"
+                    ? "border border-amber-500/50 bg-amber-500/30 text-amber-300"
+                    : "border border-amber-900/25 text-amber-200/85 hover:border-amber-500/40"
                 }`}
               >
                 {category.label}
@@ -666,31 +876,52 @@ export function RoomToolsPanel({
             ))}
           </div>
           <div className="grid max-h-40 grid-cols-2 gap-1.5 overflow-y-auto pr-0.5">
-            {catalogItems.map((item) => (
-              <button
-                key={item.type}
-                type="button"
-                onClick={() => addObject(item.type)}
-                className="rounded border border-[#5d4037]/70 px-1.5 py-2 text-right text-[10px] text-[#d8d0c0] transition hover:border-[#c8a97e] hover:text-[#c8a97e]"
-              >
-                + {item.label}
-              </button>
-            ))}
+            {catalogItems.map((item) => {
+              const isWallDraw =
+                isDrawWallType(item.type) &&
+                building.drawMode === "wall" &&
+                building.drawWallType === item.type;
+              return (
+                <button
+                  key={item.type}
+                  type="button"
+                  onClick={() => addObject(item.type)}
+                  className={`rounded-md border px-1.5 py-2 text-right text-[10px] transition ${
+                    isWallDraw
+                      ? "border-amber-500/50 bg-amber-500/25 text-amber-300"
+                      : "border-amber-900/20 bg-[#120e08] text-amber-200/70 hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
+                  }`}
+                >
+                  {isDrawWallType(item.type) ? "✎ " : "+ "}
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
+          {building.drawMode === "wall" ? (
+            <p className="text-[10px] leading-5 text-amber-400/70">
+              حالت رسم دیوار فعال است — روی زمین درگ کنید تا اتاق با «
+              {getObjectLabel(building.drawWallType)}» ساخته شود. دوباره همان
+              دکمه را بزنید تا لغو شود.
+            </p>
+          ) : null}
 
           {active.objects.length > 0 ? (
-            <div className="max-h-28 space-y-1 overflow-y-auto rounded border border-[#5d4037]/40 bg-[#140e0a]/70 p-1.5">
+            <div className="max-h-28 space-y-1 overflow-y-auto rounded border border-amber-900/15 bg-[#1c1610]/70 p-1.5">
               {active.objects.map((object) => (
                 <button
                   key={object.id}
                   type="button"
                   onClick={() =>
-                    patchBuilding({ selectedObjectId: object.id })
+                    patchBuilding({
+                      selectedObjectId: object.id,
+                      selectedWorkspaceId: null,
+                    })
                   }
-                  className={`flex w-full items-center justify-between rounded px-2 py-1 text-[10px] transition ${
+                  className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-[10px] transition ${
                     object.id === building.selectedObjectId
-                      ? "bg-[#c8a97e]/20 text-[#c8a97e]"
-                      : "text-[#d8d0c0] hover:bg-[#c8a97e]/10"
+                      ? "border border-amber-500/40 bg-amber-500/20 text-amber-300"
+                      : "border border-transparent text-amber-200/70 hover:bg-[#261e16]"
                   }`}
                 >
                   <span>{getObjectLabel(object.type)}</span>
@@ -701,21 +932,21 @@ export function RoomToolsPanel({
               ))}
             </div>
           ) : (
-            <p className="text-[10px] text-[#9a8b78]">
+            <p className="text-[10px] text-amber-500/55">
               هنوز ابجکتی نیست — از دسته‌ها یکی اضافه کنید.
             </p>
           )}
 
           {selected ? (
-            <div className="space-y-3 rounded border border-[#c8a97e]/35 bg-[#c8a97e]/5 p-2">
+            <div className="space-y-3 rounded border border-amber-500/30 bg-amber-500/5 p-2">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-[#c8a97e]">
+                <span className="text-[11px] font-medium text-amber-300/85">
                   ویرایش: {getObjectLabel(selected.type)}
                 </span>
                 <button
                   type="button"
                   onClick={removeSelectedObject}
-                  className="rounded border border-[#5d4037]/70 px-2 py-0.5 text-[10px] text-[#d8d0c0] hover:border-red-400 hover:text-red-300"
+                  className="rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-0.5 text-[10px] text-amber-200/85 hover:border-red-400 hover:text-red-300"
                 >
                   حذف
                 </button>
@@ -736,7 +967,7 @@ export function RoomToolsPanel({
                   onBeforeObjectEdit?.();
                   snapSelectedToSurface();
                 }}
-                className="w-full rounded border border-[#c8a97e]/50 px-2 py-1.5 text-[10px] text-[#c8a97e] transition hover:bg-[#c8a97e]/15"
+                className="w-full rounded-md border border-amber-500/40 px-2 py-1.5 text-[10px] text-amber-300/85 transition hover:bg-amber-500/10"
               >
                 چسباندن روی سطح زیرین (میز و …)
               </button>
@@ -793,8 +1024,8 @@ export function RoomToolsPanel({
           ) : null}
         </section>
 
-        <section className="space-y-3 border-t border-[#5d4037]/40 pt-3">
-          <div className="text-[10px] font-semibold tracking-wide text-[#9a8b78]">
+        <section className="space-y-3 border-t border-amber-900/15 pt-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
             اندازهٔ طبقهٔ فعال
           </div>
           <NumberField
@@ -835,8 +1066,8 @@ export function RoomToolsPanel({
           />
         </section>
 
-        <section className="space-y-3 border-t border-[#5d4037]/40 pt-3">
-          <div className="text-[10px] font-semibold tracking-wide text-[#9a8b78]">
+        <section className="space-y-3 border-t border-amber-900/15 pt-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
             ظاهر طبقهٔ فعال
           </div>
           <ColorField
@@ -850,7 +1081,7 @@ export function RoomToolsPanel({
             onChange={(value) => patchActiveFloor("wallColor", value)}
           />
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-[#e8dcc8]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
               خطوط دانهٔ چوب روی کف
             </span>
             <input
@@ -859,13 +1090,13 @@ export function RoomToolsPanel({
               onChange={(event) =>
                 patchActiveFloor("showFloorGrain", event.target.checked)
               }
-              className="h-4 w-4 accent-[#c8a97e]"
+              className="h-4 w-4 accent-amber-500"
             />
           </label>
         </section>
 
-        <section className="rounded border border-[#5d4037]/40 bg-[#140e0a]/80 p-2 text-[10px] leading-5 text-[#9a8b78]">
-          پورت <span className="text-[#c8a97e]">3001</span> · بدون Gateway ·
+        <section className="rounded border border-amber-900/15 bg-[#1c1610]/80 p-2 text-[10px] leading-5 text-amber-500/55">
+          پورت <span className="text-amber-300/85">3001</span> · بدون Gateway ·
           ابجکت را از لیست یا با کلیک روی صحنه انتخاب کنید.
         </section>
       </div>

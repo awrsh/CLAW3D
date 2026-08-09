@@ -189,12 +189,12 @@ export const OBJECT_CATALOG: readonly ObjectCatalogItem[] = [
   item({ type: "yoga_mat", label: "مت یوگا", category: "gym", footprint: [70, 30], height: 0.03, color: "#0f766e", defaultScale: 1 }),
 
   // structure — interior walls & doors
-  item({ type: "wall_solid", label: "دیوار ساده", category: "structure", footprint: [120, 8], height: 2.2, color: "#8d6e63", defaultScale: 1 }),
-  item({ type: "wall_drywall", label: "دیوار گچی", category: "structure", footprint: [120, 8], height: 2.2, color: "#eceff1", defaultScale: 1 }),
-  item({ type: "wall_brick", label: "دیوار آجری", category: "structure", footprint: [120, 10], height: 2.2, color: "#a1887f", defaultScale: 1 }),
-  item({ type: "wall_glass", label: "دیوار شیشه‌ای", category: "structure", footprint: [120, 6], height: 2.2, color: "#90caf9", defaultScale: 1 }),
-  item({ type: "wall_partition", label: "پارتیشن", category: "structure", footprint: [100, 6], height: 1.35, color: "#78909c", defaultScale: 1 }),
-  item({ type: "door", label: "در", category: "structure", footprint: [80, 10], height: 2.1, color: "#5d4037", defaultScale: 1 }),
+  item({ type: "wall_solid", label: "دیوار ساده", category: "structure", footprint: [120, 8], height: 2.2, color: "#eef1f4", defaultScale: 1 }),
+  item({ type: "wall_drywall", label: "دیوار گچی", category: "structure", footprint: [120, 8], height: 2.2, color: "#f2f4f6", defaultScale: 1 }),
+  item({ type: "wall_brick", label: "دیوار آجری", category: "structure", footprint: [120, 10], height: 2.2, color: "#b7aea6", defaultScale: 1 }),
+  item({ type: "wall_glass", label: "دیوار شیشه‌ای", category: "structure", footprint: [120, 6], height: 2.2, color: "#c5d8e8", defaultScale: 1 }),
+  item({ type: "wall_partition", label: "پارتیشن", category: "structure", footprint: [100, 6], height: 1.35, color: "#d7dde3", defaultScale: 1 }),
+  item({ type: "door", label: "در", category: "structure", footprint: [80, 10], height: 2.1, color: "#e8eaed", defaultScale: 1 }),
 ] as const;
 
 export const OBJECT_CATEGORIES: { id: ObjectCategory; label: string }[] = [

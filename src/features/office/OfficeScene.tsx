@@ -7,14 +7,26 @@ import * as THREE from "three";
 import {
   CAMERA_OFFSET,
   CAMERA_ZOOM,
+  getActiveFloor,
   getFloorWorldY,
   type BuildingConfig,
   type LightingMode,
 } from "@/features/office/core/roomConfig";
 import type { OfficeAgent } from "@/features/office/core/agents";
+import type { DialogueTurn } from "@/features/office/core/agentDialogue";
 import { FloorConnectors } from "@/features/office/scene/FloorConnectors";
+import { CameraWasdControls } from "@/features/office/scene/CameraWasdControls";
 import { ObjectDragController } from "@/features/office/scene/ObjectDragController";
 import { OfficeLevel } from "@/features/office/scene/OfficeLevel";
+import type {
+  AgentFocusRequest,
+  ForcedChatRequest,
+} from "@/features/office/scene/AgentSystem";
+import {
+  WorkspaceDrawController,
+  type DrawBounds,
+  type WorkspaceDraft,
+} from "@/features/office/scene/WorkspaceDrawController";
 
 type OfficeSceneProps = {
   building: BuildingConfig;
@@ -22,7 +34,20 @@ type OfficeSceneProps = {
   onMoveObject: (objectId: string, x: number, z: number) => void;
   onDragBegin?: (objectId: string) => void;
   onDragEnd?: (objectId: string) => void;
+  onSelectWorkspace?: (workspaceId: string) => void;
+  onAddWorkspace?: (draft: WorkspaceDraft) => void;
+  onAddWallRoom?: (draft: WorkspaceDraft) => void;
+  selectedAgentId?: string | null;
+  focusRequest?: AgentFocusRequest | null;
+  forcedChatRequest?: ForcedChatRequest | null;
+  onAgentSelect?: (agent: OfficeAgent) => void;
   onAgentState?: (agentId: string, state: OfficeAgent["state"]) => void;
+  onPeerChat?: (
+    a: OfficeAgent,
+    b: OfficeAgent,
+    turns: DialogueTurn[],
+  ) => void;
+  onWorkSessionDone?: (leadId: string) => void;
 };
 
 type OrbitLike = {
@@ -40,10 +65,10 @@ const LIGHTING: Record<
   }
 > = {
   day: {
-    bg: "#87a0b8",
-    ambient: { intensity: 0.78, color: "#d8d4c8" },
-    sun: { intensity: 1.15, color: "#f6f1e6" },
-    fill: { intensity: 0.35, color: "#7090ff" },
+    bg: "#a8b4c0",
+    ambient: { intensity: 0.82, color: "#e8ecef" },
+    sun: { intensity: 1.05, color: "#fff6ea" },
+    fill: { intensity: 0.42, color: "#8aa0c8" },
   },
   evening: {
     bg: "#3a2a38",
@@ -59,14 +84,19 @@ const LIGHTING: Record<
   },
 };
 
+/** Keep orbit pivot on the active floor height when switching levels. */
 function FocusActiveFloor({ targetY }: { targetY: number }) {
   const controls = useThree((state) => state.controls) as OrbitLike | null;
+  const { camera } = useThree();
 
   useEffect(() => {
     if (!controls?.target) return;
+    const prevY = controls.target.y;
+    const delta = targetY - prevY;
     controls.target.set(0, targetY, 0);
+    camera.position.y += delta;
     controls.update();
-  }, [controls, targetY]);
+  }, [camera, controls, targetY]);
 
   return null;
 }
@@ -85,9 +115,22 @@ export function OfficeScene({
   onMoveObject,
   onDragBegin,
   onDragEnd,
+  onSelectWorkspace,
+  onAddWorkspace,
+  onAddWallRoom,
+  selectedAgentId = null,
+  focusRequest = null,
+  forcedChatRequest = null,
+  onAgentSelect,
   onAgentState,
+  onPeerChat,
+  onWorkSessionDone,
 }: OfficeSceneProps) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const drawMode =
+    building.drawMode === "workspace" || building.drawMode === "wall";
+  const isWorkspaceDraw = building.drawMode === "workspace";
+  const isWallDraw = building.drawMode === "wall";
   const activeY = getFloorWorldY(building, building.activeFloorId);
   const lighting = LIGHTING[building.lightingMode] ?? LIGHTING.day;
   const cameraTarget = useMemo<[number, number, number]>(
@@ -102,6 +145,28 @@ export function OfficeScene({
     ],
     [activeY],
   );
+
+  const drawClipBounds = useMemo((): DrawBounds => {
+    const floor = getActiveFloor(building);
+    const floorBounds: DrawBounds = {
+      minX: -floor.width / 2,
+      maxX: floor.width / 2,
+      minZ: -floor.depth / 2,
+      maxZ: floor.depth / 2,
+    };
+    const selected = (floor.workspaces ?? []).find(
+      (unit) => unit.id === building.selectedWorkspaceId,
+    );
+    if (!selected) return floorBounds;
+    // Slight inset so new rooms sit inside the selected unit walls.
+    const inset = selected.withWalls ? 0.12 : 0.02;
+    return {
+      minX: Math.max(floorBounds.minX, selected.x - selected.width / 2 + inset),
+      maxX: Math.min(floorBounds.maxX, selected.x + selected.width / 2 - inset),
+      minZ: Math.max(floorBounds.minZ, selected.z - selected.depth / 2 + inset),
+      maxZ: Math.min(floorBounds.maxZ, selected.z + selected.depth / 2 - inset),
+    };
+  }, [building]);
 
   const visibleFloors = useMemo(() => {
     if (building.showAllFloors) return building.floors;
@@ -134,7 +199,7 @@ export function OfficeScene({
         width: "100%",
         height: "100%",
         background: lighting.bg,
-        cursor: draggingId ? "grabbing" : "default",
+        cursor: draggingId ? "grabbing" : drawMode ? "crosshair" : "default",
       }}
       onCreated={({ camera, gl }) => {
         camera.lookAt(...cameraTarget);
@@ -147,13 +212,15 @@ export function OfficeScene({
         });
       }}
       onPointerMissed={() => {
-        if (!draggingId) onSelectObject("");
+        if (drawMode || draggingId) return;
+        onSelectObject("");
+        onSelectWorkspace?.("");
       }}
     >
       <SceneBackground color={lighting.bg} />
       <OrbitControls
         makeDefault
-        enabled={!draggingId}
+        enabled={!draggingId && !drawMode}
         target={cameraTarget}
         enableDamping
         dampingFactor={0.08}
@@ -165,8 +232,9 @@ export function OfficeScene({
         maxPolarAngle={Math.PI / 2.05}
       />
       <FocusActiveFloor targetY={activeY} />
+      <CameraWasdControls enabled={!draggingId} />
       <ObjectDragController
-        draggingId={draggingId}
+        draggingId={drawMode ? null : draggingId}
         floorY={activeY}
         onMove={(x, z) => {
           if (!draggingId) return;
@@ -175,6 +243,17 @@ export function OfficeScene({
         onEnd={() => {
           if (draggingId) onDragEnd?.(draggingId);
           setDraggingId(null);
+        }}
+      />
+      <WorkspaceDrawController
+        enabled={drawMode}
+        floorY={activeY}
+        shape={isWorkspaceDraw ? building.workspaceShape : "rectangle"}
+        snapToGrid={building.snapToGrid}
+        clipBounds={drawClipBounds}
+        onCommit={(draft) => {
+          if (isWallDraw) onAddWallRoom?.(draft);
+          else onAddWorkspace?.(draft);
         }}
       />
 
@@ -207,11 +286,22 @@ export function OfficeScene({
             y={y}
             dimmed={building.showAllFloors && !isActive}
             selectedObjectId={isActive ? building.selectedObjectId : null}
-            onSelectObject={isActive ? onSelectObject : undefined}
+            onSelectObject={isActive && !drawMode ? onSelectObject : undefined}
+            selectedWorkspaceId={
+              isActive ? building.selectedWorkspaceId : null
+            }
+            onSelectWorkspace={isActive ? onSelectWorkspace : undefined}
+            workspaceInteractive={true}
             lampsOn={building.lampsOn}
+            selectedAgentId={isActive ? selectedAgentId : null}
+            focusRequest={isActive ? focusRequest : null}
+            forcedChatRequest={isActive ? forcedChatRequest : null}
+            onAgentSelect={isActive && !drawMode ? onAgentSelect : undefined}
             onAgentState={isActive ? onAgentState : undefined}
+            onPeerChat={isActive ? onPeerChat : undefined}
+            onWorkSessionDone={isActive ? onWorkSessionDone : undefined}
             onDragStart={
-              isActive
+              isActive && !drawMode
                 ? (objectId) => {
                     onDragBegin?.(objectId);
                     onSelectObject(objectId);

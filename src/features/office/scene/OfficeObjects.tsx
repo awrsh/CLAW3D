@@ -66,45 +66,61 @@ function WallMesh({ object }: { object: PlacedObject }) {
   const thickness = size.depth;
   const length = object.length || size.width;
   const y = height / 2;
-  const color =
-    object.type === "wall_glass"
-      ? "#90caf9"
-      : object.type === "wall_brick"
-        ? "#a1887f"
-        : object.type === "wall_drywall"
-          ? "#eceff1"
-          : object.type === "wall_partition"
-            ? "#b0bec5"
-            : object.type === "door"
-              ? "#6d4c41"
-              : "#8d6e63";
 
   if (object.type === "door") {
-    const frame = 0.08;
+    const frame = 0.06;
+    const leafW = Math.max(0.35, length * 0.55);
+    const frameMetal = "#a8b0ba";
+    const leaf = "#e8eaed";
     return (
       <group>
+        {/* Aluminum frame */}
         <mesh position={[-length / 2 + frame / 2, y, 0]} castShadow>
-          <boxGeometry args={[frame, height, thickness]} />
-          <meshStandardMaterial color="#4e342e" roughness={0.7} />
+          <boxGeometry args={[frame, height, thickness * 1.15]} />
+          <meshStandardMaterial color={frameMetal} metalness={0.7} roughness={0.28} />
         </mesh>
         <mesh position={[length / 2 - frame / 2, y, 0]} castShadow>
-          <boxGeometry args={[frame, height, thickness]} />
-          <meshStandardMaterial color="#4e342e" roughness={0.7} />
+          <boxGeometry args={[frame, height, thickness * 1.15]} />
+          <meshStandardMaterial color={frameMetal} metalness={0.7} roughness={0.28} />
         </mesh>
         <mesh position={[0, height - frame / 2, 0]} castShadow>
-          <boxGeometry args={[length, frame, thickness]} />
-          <meshStandardMaterial color="#4e342e" roughness={0.7} />
+          <boxGeometry args={[length, frame, thickness * 1.15]} />
+          <meshStandardMaterial color={frameMetal} metalness={0.7} roughness={0.28} />
         </mesh>
-        <mesh position={[-length * 0.15, y * 0.95, thickness * 0.15]} castShadow>
-          <boxGeometry args={[length * 0.55, height * 0.92, thickness * 0.35]} />
-          <meshStandardMaterial color={color} roughness={0.65} />
+        {/* Slim threshold */}
+        <mesh position={[0, 0.015, 0]} castShadow>
+          <boxGeometry args={[length - frame * 2, 0.03, thickness * 1.2]} />
+          <meshStandardMaterial color="#7a828c" metalness={0.55} roughness={0.4} />
         </mesh>
+        {/* Open leaf — matte white modern door */}
+        <group position={[-length / 2 + frame, 0, 0]} rotation={[0, -1.4, 0]}>
+          <mesh position={[leafW / 2, y * 0.95, 0]} castShadow>
+            <boxGeometry args={[leafW, height * 0.9, thickness * 0.4]} />
+            <meshStandardMaterial color={leaf} roughness={0.55} metalness={0.05} />
+          </mesh>
+          <mesh position={[leafW - 0.08, y * 0.9, thickness * 0.28]} castShadow>
+            <boxGeometry args={[0.04, 0.18, 0.03]} />
+            <meshStandardMaterial color="#4a5560" metalness={0.8} roughness={0.25} />
+          </mesh>
+        </group>
       </group>
     );
   }
 
   const isGlass = object.type === "wall_glass";
   const isBrick = object.type === "wall_brick";
+  const isPartition = object.type === "wall_partition";
+  const isDrywall = object.type === "wall_drywall";
+
+  const color = isGlass
+    ? "#c5d8e8"
+    : isBrick
+      ? "#b7aea6"
+      : isDrywall
+        ? "#f2f4f6"
+        : isPartition
+          ? "#d7dde3"
+          : "#eceff1";
 
   return (
     <group>
@@ -112,27 +128,62 @@ function WallMesh({ object }: { object: PlacedObject }) {
         <boxGeometry args={[length, height, thickness]} />
         <meshStandardMaterial
           color={color}
-          roughness={isGlass ? 0.15 : isBrick ? 0.95 : 0.8}
-          metalness={isGlass ? 0.35 : 0.05}
+          roughness={isGlass ? 0.08 : isBrick ? 0.88 : 0.65}
+          metalness={isGlass ? 0.25 : isPartition ? 0.2 : 0.03}
           transparent={isGlass}
-          opacity={isGlass ? 0.35 : 1}
+          opacity={isGlass ? 0.28 : 1}
+          envMapIntensity={isGlass ? 1.2 : 0.6}
         />
       </mesh>
-      {isBrick
-        ? Array.from({ length: 4 }).map((_, row) => (
-            <mesh
-              key={row}
-              position={[0, 0.25 + row * 0.48, thickness / 2 + 0.005]}
-            >
-              <planeGeometry args={[length * 0.96, 0.03]} />
-              <meshBasicMaterial color="#6d4c41" transparent opacity={0.35} />
+
+      {/* Glass mullions */}
+      {isGlass
+        ? [-length * 0.25, 0, length * 0.25].map((ox) => (
+            <mesh key={`mullion-${ox}`} position={[ox, y, thickness / 2 + 0.01]}>
+              <boxGeometry args={[0.03, height * 0.96, 0.02]} />
+              <meshStandardMaterial color="#9aa3ad" metalness={0.7} roughness={0.3} />
             </mesh>
           ))
         : null}
-      {object.type === "wall_partition" ? (
-        <mesh position={[0, height + 0.02, 0]}>
-          <boxGeometry args={[length, 0.04, thickness * 1.2]} />
-          <meshStandardMaterial color="#546e7a" metalness={0.4} roughness={0.4} />
+
+      {/* Subtle brick courses (modern thin brick) */}
+      {isBrick
+        ? Array.from({ length: 5 }).map((_, row) => (
+            <mesh
+              key={row}
+              position={[0, 0.22 + row * 0.4, thickness / 2 + 0.004]}
+            >
+              <planeGeometry args={[length * 0.97, 0.018]} />
+              <meshBasicMaterial color="#8a827a" transparent opacity={0.28} />
+            </mesh>
+          ))
+        : null}
+
+      {/* Partition: frosted glass band + metal cap */}
+      {isPartition ? (
+        <>
+          <mesh position={[0, height * 0.55, thickness / 2 + 0.008]}>
+            <planeGeometry args={[length * 0.92, height * 0.55]} />
+            <meshStandardMaterial
+              color="#e8eef4"
+              transparent
+              opacity={0.45}
+              roughness={0.2}
+              metalness={0.15}
+            />
+          </mesh>
+          <mesh position={[0, height + 0.02, 0]}>
+            <boxGeometry args={[length, 0.035, thickness * 1.35]} />
+            <meshStandardMaterial color="#8e97a3" metalness={0.65} roughness={0.32} />
+          </mesh>
+        </>
+      ) : null}
+
+      {/* Drywall shadow reveal at base */}
+      {isDrywall || object.type === "wall_solid" ? (
+        <mesh position={[0, 0.04, thickness / 2 + 0.006]}>
+          <boxGeometry args={[length * 0.98, 0.06, 0.01]} />
+          <meshStandardMaterial color="#c5ccd3" roughness={0.7} metalness={0.1} />
         </mesh>
       ) : null}
     </group>

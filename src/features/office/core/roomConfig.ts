@@ -8,6 +8,7 @@ import {
   clonePlacedObjects,
   createPlacedObject,
   resolveObjectType,
+  type ObjectType,
   type PlacedObject,
 } from "@/features/office/core/objects";
 
@@ -15,6 +16,61 @@ export type { PlacedObject, ObjectType } from "@/features/office/core/objects";
 export type { OfficeAgent } from "@/features/office/core/agents";
 export type { RoomPresetId } from "@/features/office/core/roomPresets";
 export { ROOM_PRESETS, getRoomPreset } from "@/features/office/core/roomPresets";
+import { fitPresetToWorkspace } from "@/features/office/core/roomPresets";
+
+export type WorkspaceShape = "rectangle" | "square";
+
+export type WorkspaceUnit = {
+  id: string;
+  label: string;
+  shape: WorkspaceShape;
+  /** Center on the floor XZ plane. */
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  floorColor: string;
+  wallColor: string;
+  /** When true, draw a simple 4-wall enclosure around the unit. */
+  withWalls: boolean;
+};
+
+export type DrawMode = "none" | "workspace" | "wall";
+
+export type DrawWallType = Extract<
+  ObjectType,
+  | "wall_solid"
+  | "wall_glass"
+  | "wall_brick"
+  | "wall_drywall"
+  | "wall_partition"
+  | "door"
+>;
+
+export function isDrawWallType(type: ObjectType): type is DrawWallType {
+  return (
+    type === "wall_solid" ||
+    type === "wall_glass" ||
+    type === "wall_brick" ||
+    type === "wall_drywall" ||
+    type === "wall_partition" ||
+    type === "door"
+  );
+}
+
+function normalizeDrawWallType(raw: unknown): DrawWallType {
+  if (
+    raw === "wall_solid" ||
+    raw === "wall_glass" ||
+    raw === "wall_brick" ||
+    raw === "wall_drywall" ||
+    raw === "wall_partition" ||
+    raw === "door"
+  ) {
+    return raw;
+  }
+  return "wall_drywall";
+}
 
 export type FloorConfig = {
   id: string;
@@ -28,6 +84,8 @@ export type FloorConfig = {
   showFloorGrain: boolean;
   objects: PlacedObject[];
   agents: OfficeAgent[];
+  /** Drawn workspace units on this floor (empty = single full-floor slab). */
+  workspaces: WorkspaceUnit[];
 };
 
 export type StructureConfig = {
@@ -53,11 +111,19 @@ export type BuildingConfig = {
   structure: StructureConfig;
   /** ابجکت انتخاب‌شده در Tools (روی طبقهٔ فعال) */
   selectedObjectId: string | null;
+  /** واحد کاری انتخاب‌شده */
+  selectedWorkspaceId: string | null;
   snapToGrid: boolean;
   snapToWall: boolean;
   lightingMode: LightingMode;
   lampsOn: boolean;
   muteSfx: boolean;
+  /** On-canvas draw tool mode. */
+  drawMode: DrawMode;
+  workspaceShape: WorkspaceShape;
+  workspaceWithWalls: boolean;
+  /** Wall/door type used when drawMode === "wall". */
+  drawWallType: DrawWallType;
 };
 
 const baseRoom = {
@@ -68,7 +134,20 @@ const baseRoom = {
   showFloorGrain: true,
   objects: [] as PlacedObject[],
   agents: [] as OfficeAgent[],
+  workspaces: [] as WorkspaceUnit[],
 };
+
+export const WORKSPACE_LIMITS = {
+  width: { min: 1, max: 80, step: 0.5 },
+  depth: { min: 1, max: 60, step: 0.5 },
+} as const;
+
+const WORKSPACE_PALETTE = [
+  { floorColor: "#c9d2dc", wallColor: "#e8eef4" },
+  { floorColor: "#d2d8cf", wallColor: "#eef4ef" },
+  { floorColor: "#d8d2cb", wallColor: "#f3efe9" },
+  { floorColor: "#cfd0d8", wallColor: "#eceef4" },
+] as const;
 
 export const DEFAULT_STRUCTURE: StructureConfig = {
   showStairs: true,
@@ -83,9 +162,10 @@ export const DEFAULT_BUILDING: BuildingConfig = {
       id: "floor-0",
       label: "طبقه ۰ — همکف",
       ...baseRoom,
-      floorColor: "#c8a97e",
-      wallColor: "#8d6e63",
+      floorColor: "#d5d8dc",
+      wallColor: "#eef1f4",
       objects: [],
+      workspaces: [],
     },
   ],
   activeFloorId: "floor-0",
@@ -93,11 +173,16 @@ export const DEFAULT_BUILDING: BuildingConfig = {
   showAllFloors: true,
   structure: DEFAULT_STRUCTURE,
   selectedObjectId: null,
+  selectedWorkspaceId: null,
   snapToGrid: true,
   snapToWall: false,
   lightingMode: "day",
   lampsOn: true,
   muteSfx: false,
+  drawMode: "none",
+  workspaceShape: "rectangle",
+  workspaceWithWalls: true,
+  drawWallType: "wall_drywall",
 };
 
 /** Limits used by the Tools panel sliders. */
@@ -112,20 +197,20 @@ export const ROOM_LIMITS = {
 
 export const MAX_FLOORS = 8;
 
-export const STORAGE_KEY = "claw3d-sample-building-v7";
+export const STORAGE_KEY = "claw3d-sample-building-v9";
 
 export const CAMERA_OFFSET: [number, number, number] = [22, 28, 28];
 export const CAMERA_ZOOM = 28;
 
 const FLOOR_PALETTE = [
-  { floorColor: "#c8a97e", wallColor: "#8d6e63" },
-  { floorColor: "#a8b89a", wallColor: "#6d7f6a" },
-  { floorColor: "#b8a090", wallColor: "#7a6558" },
-  { floorColor: "#9aa8b8", wallColor: "#5f6d7c" },
-  { floorColor: "#c4a878", wallColor: "#8a7358" },
-  { floorColor: "#a898a8", wallColor: "#6f5f6f" },
-  { floorColor: "#98b8a8", wallColor: "#5a7a6a" },
-  { floorColor: "#b8a8a0", wallColor: "#7a6a62" },
+  { floorColor: "#d5d8dc", wallColor: "#eef1f4" },
+  { floorColor: "#cfd6cf", wallColor: "#f4f6f5" },
+  { floorColor: "#d8d2cb", wallColor: "#f5f2ef" },
+  { floorColor: "#c9d0d8", wallColor: "#e9eef4" },
+  { floorColor: "#d2d2d6", wallColor: "#f0f0f3" },
+  { floorColor: "#c8d4d8", wallColor: "#eef5f6" },
+  { floorColor: "#d6d0d4", wallColor: "#f5f0f3" },
+  { floorColor: "#cfd3c8", wallColor: "#f2f4ef" },
 ] as const;
 
 export function createFloor(index: number): FloorConfig {
@@ -136,8 +221,34 @@ export function createFloor(index: number): FloorConfig {
     ...baseRoom,
     objects: [],
     agents: [],
+    workspaces: [],
     ...colors,
   };
+}
+
+export function createWorkspaceUnit(
+  index: number,
+  partial: Partial<WorkspaceUnit> &
+    Pick<WorkspaceUnit, "x" | "z" | "width" | "depth" | "shape">,
+): WorkspaceUnit {
+  const colors = WORKSPACE_PALETTE[index % WORKSPACE_PALETTE.length]!;
+  return {
+    id: `workspace-${Date.now()}-${index}`,
+    label: `واحد ${index + 1}`,
+    floorColor: colors.floorColor,
+    wallColor: colors.wallColor,
+    withWalls: true,
+    ...partial,
+    width: Math.max(WORKSPACE_LIMITS.width.min, partial.width),
+    depth: Math.max(WORKSPACE_LIMITS.depth.min, partial.depth),
+  };
+}
+
+export function cloneWorkspaces(workspaces: WorkspaceUnit[]): WorkspaceUnit[] {
+  return workspaces.map((unit, index) => ({
+    ...unit,
+    id: `workspace-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+  }));
 }
 
 /** Deep-copy the active floor (layout + objects) as a new story. */
@@ -155,6 +266,7 @@ export function duplicateFloor(
     label: `${source.label} (کپی)`,
     objects: clonePlacedObjects(source.objects),
     agents: cloneAgents(source.agents ?? []),
+    workspaces: cloneWorkspaces(source.workspaces ?? []),
   };
   const floors = [
     ...building.floors.slice(0, index + 1),
@@ -166,6 +278,7 @@ export function duplicateFloor(
     floors,
     activeFloorId: copy.id,
     selectedObjectId: null,
+    selectedWorkspaceId: null,
     structure: {
       ...building.structure,
       showStairs: true,
@@ -174,27 +287,81 @@ export function duplicateFloor(
   };
 }
 
-/** Replace objects on a floor with a ready-made room preset. */
+/** Replace objects on a floor with a ready-made room preset.
+ * When `workspaceId` is set, the preset is scaled to fill that unit and
+ * only replaces objects/agents that sit inside it.
+ */
 export function applyPresetToFloor(
   building: BuildingConfig,
   floorId: string,
   objects: PlacedObject[],
   agents: OfficeAgent[] = [],
   label?: string,
+  options?: {
+    workspaceId?: string | null;
+    designWidth?: number;
+    designDepth?: number;
+  },
 ): BuildingConfig {
+  const workspaceId = options?.workspaceId ?? null;
+
   return {
     ...building,
-    floors: building.floors.map((floor) =>
-      floor.id !== floorId
-        ? floor
-        : {
-            ...floor,
-            label: label ?? floor.label,
-            objects: clonePlacedObjects(objects),
-            agents: cloneAgents(agents),
+    floors: building.floors.map((floor) => {
+      if (floor.id !== floorId) return floor;
+
+      const workspace = workspaceId
+        ? (floor.workspaces ?? []).find((unit) => unit.id === workspaceId)
+        : null;
+
+      if (
+        workspace &&
+        typeof options?.designWidth === "number" &&
+        typeof options?.designDepth === "number"
+      ) {
+        const fitted = fitPresetToWorkspace(
+          {
+            objects,
+            agents,
+            designWidth: options.designWidth,
+            designDepth: options.designDepth,
           },
-    ),
+          workspace,
+        );
+        const halfW = workspace.width / 2;
+        const halfD = workspace.depth / 2;
+        const inside = (x: number, z: number) =>
+          Math.abs(x - workspace.x) <= halfW + 0.05 &&
+          Math.abs(z - workspace.z) <= halfD + 0.05;
+
+        return {
+          ...floor,
+          objects: [
+            ...floor.objects.filter((object) => !inside(object.x, object.z)),
+            ...clonePlacedObjects(fitted.objects),
+          ],
+          agents: [
+            ...(floor.agents ?? []).filter(
+              (agent) => !inside(agent.x, agent.z),
+            ),
+            ...cloneAgents(fitted.agents),
+          ],
+          // Preset brings its own walls; avoid double enclosure.
+          workspaces: (floor.workspaces ?? []).map((unit) =>
+            unit.id === workspace.id ? { ...unit, withWalls: false } : unit,
+          ),
+        };
+      }
+
+      return {
+        ...floor,
+        label: label ?? floor.label,
+        objects: clonePlacedObjects(objects),
+        agents: cloneAgents(agents),
+      };
+    }),
     selectedObjectId: null,
+    selectedWorkspaceId: workspaceId ?? null,
   };
 }
 
@@ -300,6 +467,44 @@ function normalizeStructure(raw: unknown): StructureConfig {
   };
 }
 
+function normalizeWorkspaces(raw: unknown): WorkspaceUnit[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item, index) => {
+      const unit = item as Partial<WorkspaceUnit>;
+      const width =
+        typeof unit.width === "number"
+          ? Math.max(WORKSPACE_LIMITS.width.min, unit.width)
+          : 0;
+      const depth =
+        typeof unit.depth === "number"
+          ? Math.max(WORKSPACE_LIMITS.depth.min, unit.depth)
+          : 0;
+      if (width <= 0 || depth <= 0) return null;
+      const colors = WORKSPACE_PALETTE[index % WORKSPACE_PALETTE.length]!;
+      return {
+        id: typeof unit.id === "string" ? unit.id : `workspace-${index}`,
+        label:
+          typeof unit.label === "string" ? unit.label : `واحد ${index + 1}`,
+        shape: unit.shape === "square" ? "square" : "rectangle",
+        x: typeof unit.x === "number" ? unit.x : 0,
+        z: typeof unit.z === "number" ? unit.z : 0,
+        width,
+        depth,
+        floorColor:
+          typeof unit.floorColor === "string"
+            ? unit.floorColor
+            : colors.floorColor,
+        wallColor:
+          typeof unit.wallColor === "string"
+            ? unit.wallColor
+            : colors.wallColor,
+        withWalls: unit.withWalls !== false,
+      } satisfies WorkspaceUnit;
+    })
+    .filter((unit): unit is WorkspaceUnit => unit !== null);
+}
+
 /** Migrate old storage into current building shape. */
 export function normalizeBuilding(raw: unknown): BuildingConfig {
   if (!raw || typeof raw !== "object") return DEFAULT_BUILDING;
@@ -317,6 +522,9 @@ export function normalizeBuilding(raw: unknown): BuildingConfig {
         objects: normalizeObjects(floor.objects),
         agents: normalizeAgents(
           (floor as Partial<FloorConfig>).agents,
+        ),
+        workspaces: normalizeWorkspaces(
+          (floor as Partial<FloorConfig>).workspaces,
         ),
       } satisfies FloorConfig;
     });
@@ -341,6 +549,10 @@ export function normalizeBuilding(raw: unknown): BuildingConfig {
         typeof data.selectedObjectId === "string"
           ? data.selectedObjectId
           : null,
+      selectedWorkspaceId:
+        typeof data.selectedWorkspaceId === "string"
+          ? data.selectedWorkspaceId
+          : null,
       snapToGrid:
         typeof data.snapToGrid === "boolean"
           ? data.snapToGrid
@@ -363,6 +575,17 @@ export function normalizeBuilding(raw: unknown): BuildingConfig {
         typeof data.muteSfx === "boolean"
           ? data.muteSfx
           : DEFAULT_BUILDING.muteSfx,
+      drawMode:
+        data.drawMode === "workspace" || data.drawMode === "wall"
+          ? data.drawMode
+          : "none",
+      workspaceShape:
+        data.workspaceShape === "square" ? "square" : "rectangle",
+      workspaceWithWalls:
+        typeof data.workspaceWithWalls === "boolean"
+          ? data.workspaceWithWalls
+          : DEFAULT_BUILDING.workspaceWithWalls,
+      drawWallType: normalizeDrawWallType(data.drawWallType),
     };
   }
 
@@ -374,6 +597,9 @@ export function normalizeBuilding(raw: unknown): BuildingConfig {
       label: "طبقه ۰ — همکف",
       objects: normalizeObjects((data as Partial<FloorConfig>).objects),
       agents: normalizeAgents((data as Partial<FloorConfig>).agents),
+      workspaces: normalizeWorkspaces(
+        (data as Partial<FloorConfig>).workspaces,
+      ),
     };
     return {
       ...DEFAULT_BUILDING,

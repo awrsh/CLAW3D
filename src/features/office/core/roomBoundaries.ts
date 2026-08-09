@@ -56,7 +56,7 @@ export function createRoomBoundary({
   innerD,
   wallType = "wall_drywall",
   doorSide = "s",
-  doorWidth = 1.6,
+  doorWidth = 2.4,
 }: BoundaryOptions): PlacedObject[] {
   const thickness = 0.14;
   const halfW = innerW / 2;
@@ -67,13 +67,13 @@ export function createRoomBoundary({
   const eastX = cx + halfW + thickness / 2;
   const fullW = innerW + thickness * 2;
   const fullD = innerD + thickness * 2;
-  const gap = Math.min(doorWidth, innerW * 0.45, innerD * 0.45);
+  const gap = Math.min(doorWidth, innerW * 0.5, innerD * 0.5);
 
   const items: PlacedObject[] = [];
 
   const addHorizontal = (
     z: number,
-    side: "n" | "s",
+    _side: "n" | "s",
     withDoor: boolean,
   ) => {
     if (!withDoor) {
@@ -88,7 +88,7 @@ export function createRoomBoundary({
 
   const addVertical = (
     x: number,
-    side: "e" | "w",
+    _side: "e" | "w",
     withDoor: boolean,
   ) => {
     if (!withDoor) {
@@ -107,6 +107,15 @@ export function createRoomBoundary({
   addVertical(eastX, "e", doorSide === "e");
 
   return items;
+}
+
+function normRot(rotationY: number): number {
+  return ((rotationY % 360) + 360) % 360;
+}
+
+function isVerticalRot(rotationY: number): boolean {
+  const rot = normRot(rotationY);
+  return (rot > 45 && rot < 135) || (rot > 225 && rot < 315);
 }
 
 /** AABB for movement blocking (walls block, doors do not). */
@@ -140,23 +149,112 @@ export function getBlockingAabb(object: PlacedObject): {
   };
 }
 
+function sameWallLine(wall: PlacedObject, door: PlacedObject): boolean {
+  if (door.type !== "door") return false;
+  const wallVert = isVerticalRot(wall.rotationY);
+  const doorVert = isVerticalRot(door.rotationY);
+  if (wallVert !== doorVert) return false;
+  if (wallVert) return Math.abs(wall.x - door.x) < 0.45;
+  return Math.abs(wall.z - door.z) < 0.45;
+}
+
+/** True when the agent is within the door's open span along the wall. */
+export function agentInDoorOpening(
+  x: number,
+  z: number,
+  door: PlacedObject,
+  inset = 0.02,
+): boolean {
+  if (door.type !== "door") return false;
+  const halfOpen = Math.max(0.4, (door.length ?? 2) / 2 - inset);
+  if (isVerticalRot(door.rotationY)) {
+    return Math.abs(z - door.z) <= halfOpen;
+  }
+  return Math.abs(x - door.x) <= halfOpen;
+}
+
+export function pointInDoorClearing(
+  x: number,
+  z: number,
+  objects: PlacedObject[],
+): boolean {
+  for (const object of objects) {
+    if (object.type !== "door") continue;
+    const halfOpen = Math.max(0.4, (object.length ?? 2) / 2);
+    const thick = 0.9;
+    if (isVerticalRot(object.rotationY)) {
+      if (
+        Math.abs(x - object.x) <= thick &&
+        Math.abs(z - object.z) <= halfOpen
+      ) {
+        return true;
+      }
+    } else if (
+      Math.abs(z - object.z) <= thick &&
+      Math.abs(x - object.x) <= halfOpen
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Circle vs wall AABB, but door openings on the same wall line never block.
+ * This is what stops agents from snagging on door jambs.
+ */
 export function pointHitsBlockers(
   x: number,
   z: number,
   radius: number,
   objects: PlacedObject[],
 ): boolean {
+  if (pointInDoorClearing(x, z, objects)) return false;
+
+  const doors = objects.filter((object) => object.type === "door");
+
   for (const object of objects) {
     const box = getBlockingAabb(object);
     if (!box) continue;
     if (
-      x + radius > box.minX &&
-      x - radius < box.maxX &&
-      z + radius > box.minZ &&
-      z - radius < box.maxZ
+      !(
+        x + radius > box.minX &&
+        x - radius < box.maxX &&
+        z + radius > box.minZ &&
+        z - radius < box.maxZ
+      )
     ) {
-      return true;
+      continue;
     }
+
+    // Jamb fix: if we're aligned with a door opening on this wall, ignore.
+    const passesDoor = doors.some(
+      (door) =>
+        sameWallLine(object, door) && agentInDoorOpening(x, z, door, 0),
+    );
+    if (passesDoor) continue;
+
+    return true;
   }
   return false;
+}
+
+/** Nearest door center within maxDist, or null. */
+export function findNearbyDoor(
+  x: number,
+  z: number,
+  objects: PlacedObject[],
+  maxDist = 2.2,
+): PlacedObject | null {
+  let best: PlacedObject | null = null;
+  let bestDist = maxDist;
+  for (const object of objects) {
+    if (object.type !== "door") continue;
+    const dist = Math.hypot(object.x - x, object.z - z);
+    if (dist < bestDist) {
+      best = object;
+      bestDist = dist;
+    }
+  }
+  return best;
 }

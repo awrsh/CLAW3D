@@ -24,6 +24,9 @@ export type RoomPreset = {
   agents: OfficeAgent[];
   /** Suggested wall style label for Tools. */
   wallStyle: ObjectType;
+  /** Design-space size used when fitting into a workspace unit. */
+  designWidth: number;
+  designDepth: number;
 };
 
 let presetSeq = 0;
@@ -66,7 +69,12 @@ function withRoom(
   furniture: PlacedObject[],
   agents: OfficeAgent[],
   doorSide: "n" | "s" | "e" | "w" = "s",
-): { objects: PlacedObject[]; agents: OfficeAgent[] } {
+): {
+  objects: PlacedObject[];
+  agents: OfficeAgent[];
+  designWidth: number;
+  designDepth: number;
+} {
   return {
     objects: [
       ...createRoomBoundary({
@@ -78,6 +86,8 @@ function withRoom(
       ...furniture,
     ],
     agents,
+    designWidth: innerW,
+    designDepth: innerD,
   };
 }
 
@@ -114,8 +124,22 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
         place("whiteboard", -8.5, 0, 90, 0),
       ],
       [
-        createAgent(0, { name: "مدیرعامل", color: "#ffb74d", x: 0, z: 1, homeX: 0, homeZ: 1 }),
-        createAgent(1, { name: "منشی", color: "#4fc3f7", x: 3, z: 3, homeX: 3, homeZ: 3 }),
+        createAgent(0, {
+          name: "قادر (سرپرست سیستم اطلاعاتی)",
+          color: "#ffb74d",
+          x: 0,
+          z: 1,
+          homeX: 0,
+          homeZ: 1,
+        }),
+        createAgent(1, {
+          name: "مینا (منشی)",
+          color: "#4fc3f7",
+          x: 3,
+          z: 3,
+          homeX: 3,
+          homeZ: 3,
+        }),
       ],
       "s",
     ),
@@ -142,7 +166,7 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
         place("whiteboard", 7, 0, 90, 0),
         place("trash", -4, 1.5, 0, 0),
       ],
-      [createAgent(0, { name: "مدیر", color: "#81c784", x: -2, z: 2.5 })],
+      [createAgent(0, { name: "رضا (مدیر)", color: "#81c784", x: -2, z: 2.5 })],
     ),
   },
   {
@@ -168,9 +192,9 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
         place("trash", 0, 0.5, 0, 0),
       ],
       [
-        createAgent(0, { name: "فرانت", color: "#4fc3f7", x: -8, z: 0 }),
-        createAgent(1, { name: "بک‌اند", color: "#ce93d8", x: -3, z: 0 }),
-        createAgent(2, { name: "دولوپر", color: "#81c784", x: 2, z: 1 }),
+        createAgent(0, { name: "سارا (فرانت‌اند)", color: "#4fc3f7", x: -8, z: 0 }),
+        createAgent(1, { name: "مسعود (بک‌اند)", color: "#ce93d8", x: -3, z: 0 }),
+        createAgent(2, { name: "آرش (فول‌استک)", color: "#81c784", x: 2, z: 1 }),
       ],
     ),
   },
@@ -196,7 +220,7 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
         place("lamp", 3, -1, 0, 0),
         place("trash", 2, 1, 0, 0),
       ],
-      [createAgent(0, { name: "مالی", color: "#ffb74d", x: 1, z: 2 })],
+      [createAgent(0, { name: "لیلا (مالی)", color: "#ffb74d", x: 1, z: 2 })],
     ),
   },
   {
@@ -223,8 +247,8 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
         place("plant", 5.5, 4, 0, 0),
       ],
       [
-        createAgent(0, { name: "هماهنگ‌کننده", x: 3, z: 3 }),
-        createAgent(1, { name: "مهمان", color: "#ef9a9a", x: -3, z: -2 }),
+        createAgent(0, { name: "نوید (هماهنگ‌کننده)", x: 3, z: 3 }),
+        createAgent(1, { name: "مهمان (بازدیدکننده)", color: "#ef9a9a", x: -3, z: -2 }),
       ],
     ),
   },
@@ -252,7 +276,7 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
         place("trash", 0, -2, 0, 0),
         place("plant", -7, 3.5, 0, 0),
       ],
-      [createAgent(0, { name: "استراحت", color: "#80cbc4", x: -2, z: 1 })],
+      [createAgent(0, { name: "کیان (استراحت)", color: "#80cbc4", x: -2, z: 1 })],
     ),
   },
   {
@@ -285,7 +309,7 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
         ]),
         agents: [
           createAgent(0, {
-            name: "مهماندار",
+            name: "پریا (مهماندار)",
             color: "#80cbc4",
             x: -14,
             z: 0,
@@ -316,7 +340,7 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
         ]),
         agents: [
           createAgent(1, {
-            name: "مدیر",
+            name: "قادر (سرپرست سیستم اطلاعاتی)",
             color: "#4fc3f7",
             x: 10,
             z: 1.2,
@@ -328,6 +352,8 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
       return {
         objects: [...kitchenShifted.objects, ...managerRoom.objects],
         agents: [...kitchenShifted.agents, ...managerRoom.agents],
+        designWidth: 38,
+        designDepth: 14,
       };
     })(),
   },
@@ -335,4 +361,81 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
 
 export function getRoomPreset(id: RoomPresetId): RoomPreset {
   return ROOM_PRESETS.find((preset) => preset.id === id) ?? ROOM_PRESETS[0]!;
+}
+
+function isLengthScaledWall(type: ObjectType): boolean {
+  return (
+    type === "wall_solid" ||
+    type === "wall_glass" ||
+    type === "wall_brick" ||
+    type === "wall_drywall" ||
+    type === "wall_partition" ||
+    type === "door"
+  );
+}
+
+function axisScaleForRotation(
+  rotationY: number,
+  scaleX: number,
+  scaleZ: number,
+): number {
+  const rot = ((rotationY % 360) + 360) % 360;
+  const vertical = (rot > 45 && rot < 135) || (rot > 225 && rot < 315);
+  return vertical ? scaleZ : scaleX;
+}
+
+/**
+ * Map a preset (authored around origin with designWidth×designDepth)
+ * into a workspace unit so it fills that unit's full width×depth.
+ */
+export function fitPresetToWorkspace(
+  preset: Pick<
+    RoomPreset,
+    "objects" | "agents" | "designWidth" | "designDepth"
+  >,
+  workspace: { x: number; z: number; width: number; depth: number },
+): { objects: PlacedObject[]; agents: OfficeAgent[] } {
+  const designW = Math.max(1, preset.designWidth);
+  const designD = Math.max(1, preset.designDepth);
+  const scaleX = workspace.width / designW;
+  const scaleZ = workspace.depth / designD;
+  const furnitureScale = Math.max(
+    0.35,
+    Math.min(2.5, Math.sqrt(scaleX * scaleZ)),
+  );
+
+  const objects = preset.objects.map((object, index) => {
+    const next = {
+      ...object,
+      id: `preset-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+      x: workspace.x + object.x * scaleX,
+      z: workspace.z + object.z * scaleZ,
+    };
+    if (isLengthScaledWall(object.type)) {
+      next.length =
+        object.length *
+        axisScaleForRotation(object.rotationY, scaleX, scaleZ);
+      next.scale = 1;
+    } else {
+      next.scale = object.scale * furnitureScale;
+    }
+    return next;
+  });
+
+  const agents = preset.agents.map((agent, index) => {
+    const x = workspace.x + agent.x * scaleX;
+    const z = workspace.z + agent.z * scaleZ;
+    const homeX = workspace.x + (agent.homeX ?? agent.x) * scaleX;
+    const homeZ = workspace.z + (agent.homeZ ?? agent.z) * scaleZ;
+    return {
+      ...agent,
+      id: `preset-agent-${Date.now()}-${index}`,
+      x,
+      z,
+      homeX,
+      homeZ,
+    };
+  });
+
+  return { objects, agents };
 }

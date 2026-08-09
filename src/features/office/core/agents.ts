@@ -1,6 +1,6 @@
 /** Local walking characters — no gateway. */
 
-export type AgentState = "idle" | "walking" | "working" | "sitting";
+export type AgentState = "idle" | "walking" | "working" | "sitting" | "chatting";
 
 export type OfficeAgent = {
   id: string;
@@ -27,13 +27,30 @@ export const AGENT_COLORS = [
 ] as const;
 
 export const AGENT_NAMES = [
-  "آریا",
-  "سارا",
-  "نیما",
-  "مریم",
-  "کسرا",
-  "النا",
+  "آرش (فول‌استک)",
+  "سارا (فرانت‌اند)",
+  "مسعود (بک‌اند)",
+  "مریم (محصول)",
+  "کسرا (دولوپر)",
+  "النا (طراح UI)",
 ] as const;
+
+/** "آرش (فول‌استک)" display helper. */
+export function formatAgentLabel(name: string, role: string): string {
+  const cleanName = name.trim();
+  const cleanRole = role.trim();
+  if (!cleanRole) return cleanName;
+  if (cleanName.includes("(")) return cleanName;
+  return `${cleanName} (${cleanRole})`;
+}
+
+/** First name only — for dialogue lines. */
+export function agentGivenName(displayName: string): string {
+  const trimmed = displayName.trim();
+  const paren = trimmed.indexOf("(");
+  if (paren > 0) return trimmed.slice(0, paren).trim();
+  return trimmed.split(/\s+/)[0] ?? trimmed;
+}
 
 export function createAgent(
   index: number,
