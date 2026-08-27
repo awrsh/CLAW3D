@@ -1,6 +1,8 @@
 import { createAgent, type OfficeAgent } from "@/features/office/core/agents";
 import {
   createPlacedObject,
+  createObjectId,
+  ensureUniqueObjectIds,
   type ObjectType,
   type PlacedObject,
 } from "@/features/office/core/objects";
@@ -37,9 +39,13 @@ function place(
   z: number,
   rotationY = 0,
   elevation = 0,
+  /** Stable template key — becomes part of instance id when preset is applied. */
+  templateKey?: string,
 ): PlacedObject {
   presetSeq += 1;
+  const templateId = templateKey ? `tpl-${templateKey}` : undefined;
   return createPlacedObject(type, presetSeq, {
+    id: templateId ?? createObjectId(type),
     x,
     z,
     rotationY,
@@ -47,15 +53,20 @@ function place(
   });
 }
 
-function deskStation(cx: number, cz: number, facing = 180): PlacedObject[] {
+function deskStation(
+  cx: number,
+  cz: number,
+  facing = 180,
+  keyPrefix = "desk",
+): PlacedObject[] {
   const deskTop = 0.75;
   return [
-    place("desk_cubicle", cx, cz, 0, 0),
-    place("chair", cx, cz + (facing === 180 ? 1.1 : -1.1), facing, 0),
-    place("computer", cx, cz - 0.15, 0, deskTop),
-    place("keyboard", cx + 0.15, cz + 0.15, 0, deskTop),
-    place("mouse", cx + 0.55, cz + 0.15, 0, deskTop),
-    place("mug", cx - 0.55, cz + 0.1, 0, deskTop),
+    place("desk_cubicle", cx, cz, 0, 0, `${keyPrefix}-desk`),
+    place("chair", cx, cz + (facing === 180 ? 1.1 : -1.1), facing, 0, `${keyPrefix}-chair`),
+    place("computer", cx, cz - 0.15, 0, deskTop, `${keyPrefix}-monitor`),
+    place("keyboard", cx + 0.15, cz + 0.15, 0, deskTop, `${keyPrefix}-keyboard`),
+    place("mouse", cx + 0.55, cz + 0.15, 0, deskTop, `${keyPrefix}-mouse`),
+    place("mug", cx - 0.55, cz + 0.1, 0, deskTop, `${keyPrefix}-mug`),
   ];
 }
 
@@ -109,19 +120,19 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
       22,
       14,
       [
-        place("executive_desk", 0, -2, 0, 0),
-        place("chair", 0, -0.6, 180, 0),
-        place("computer", 0, -2.2, 0, 0.78),
-        place("keyboard", 0.2, -1.85, 0, 0.78),
-        place("mouse", 0.55, -1.85, 0, 0.78),
-        place("couch", -4.5, 2.5, 90, 0),
-        place("couch", 4.5, 2.5, 270, 0),
-        place("table_rect", 0, 2.5, 0, 0),
-        place("bookshelf", -7, -4, 0, 0),
-        place("plant", 7, -4, 0, 0),
-        place("plant", -7, 4, 0, 0),
-        place("lamp", 5, -1, 0, 0),
-        place("whiteboard", -8.5, 0, 90, 0),
+        place("executive_desk", 0, -2, 0, 0, "ceo-desk"),
+        place("chair", 0, -0.6, 180, 0, "ceo-chair"),
+        place("computer", 0, -2.2, 0, 0.78, "ceo-monitor"),
+        place("keyboard", 0.2, -1.85, 0, 0.78, "ceo-keyboard"),
+        place("mouse", 0.55, -1.85, 0, 0.78, "ceo-mouse"),
+        place("couch", -4.5, 2.5, 90, 0, "ceo-couch-l"),
+        place("couch", 4.5, 2.5, 270, 0, "ceo-couch-r"),
+        place("table_rect", 0, 2.5, 0, 0, "ceo-table"),
+        place("bookshelf", -7, -4, 0, 0, "ceo-shelf"),
+        place("plant", 7, -4, 0, 0, "ceo-plant-a"),
+        place("plant", -7, 4, 0, 0, "ceo-plant-b"),
+        place("lamp", 5, -1, 0, 0, "ceo-lamp"),
+        place("whiteboard", -8.5, 0, 90, 0, "ceo-board"),
       ],
       [
         createAgent(0, {
@@ -154,17 +165,17 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
       18,
       12,
       [
-        place("executive_desk", -2, 0, 0, 0),
-        place("chair", -2, 1.4, 180, 0),
-        place("computer", -2, -0.25, 0, 0.78),
-        place("keyboard", -1.8, 0.15, 0, 0.78),
-        place("mouse", -1.4, 0.15, 0, 0.78),
-        place("chair", 2, -1, 270, 0),
-        place("chair", 2, 1, 270, 0),
-        place("bookshelf", -6, -3, 0, 0),
-        place("plant", 5.5, -3.5, 0, 0),
-        place("whiteboard", 7, 0, 90, 0),
-        place("trash", -4, 1.5, 0, 0),
+        place("executive_desk", -2, 0, 0, 0, "manager-desk"),
+        place("chair", -2, 1.4, 180, 0, "manager-chair"),
+        place("computer", -2, -0.25, 0, 0.78, "manager-monitor"),
+        place("keyboard", -1.8, 0.15, 0, 0.78, "manager-keyboard"),
+        place("mouse", -1.4, 0.15, 0, 0.78, "manager-mouse"),
+        place("chair", 2, -1, 270, 0, "manager-guest-chair-a"),
+        place("chair", 2, 1, 270, 0, "manager-guest-chair-b"),
+        place("bookshelf", -6, -3, 0, 0, "manager-shelf"),
+        place("plant", 5.5, -3.5, 0, 0, "manager-plant"),
+        place("whiteboard", 7, 0, 90, 0, "manager-board"),
+        place("trash", -4, 1.5, 0, 0, "manager-trash"),
       ],
       [createAgent(0, { name: "رضا (مدیر)", color: "#81c784", x: -2, z: 2.5 })],
     ),
@@ -179,17 +190,17 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
       28,
       16,
       [
-        ...deskStation(-8, -3),
-        ...deskStation(-3, -3),
-        ...deskStation(2, -3),
-        ...deskStation(7, -3),
-        ...deskStation(-8, 4, 0),
-        ...deskStation(-3, 4, 0),
-        place("kanban_board", 10, 0, 90, 0),
-        place("printer", 10, -4, 0, 0),
-        place("water_cooler", 10, 4, 0, 0),
-        place("plant", -11, 0, 0, 0),
-        place("trash", 0, 0.5, 0, 0),
+        ...deskStation(-8, -3, 180, "eng-frontend-1"),
+        ...deskStation(-3, -3, 180, "eng-backend-1"),
+        ...deskStation(2, -3, 180, "eng-fullstack-1"),
+        ...deskStation(7, -3, 180, "eng-qa-1"),
+        ...deskStation(-8, 4, 0, "eng-frontend-2"),
+        ...deskStation(-3, 4, 0, "eng-backend-2"),
+        place("kanban_board", 10, 0, 90, 0, "eng-kanban"),
+        place("printer", 10, -4, 0, 0, "eng-printer"),
+        place("water_cooler", 10, 4, 0, 0, "eng-cooler"),
+        place("plant", -11, 0, 0, 0, "eng-plant"),
+        place("trash", 0, 0.5, 0, 0, "eng-trash"),
       ],
       [
         createAgent(0, { name: "سارا (فرانت‌اند)", color: "#4fc3f7", x: -8, z: 0 }),
@@ -208,17 +219,17 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
       16,
       12,
       [
-        place("executive_desk", 0, -1, 0, 0),
-        place("chair", 0, 0.5, 180, 0),
-        place("computer", 0, -1.25, 0, 0.78),
-        place("keyboard", 0.2, -0.85, 0, 0.78),
-        place("mouse", 0.55, -0.85, 0, 0.78),
-        place("cabinet", -5, 2, 0, 0),
-        place("bookshelf", 5, -3, 0, 0),
-        place("printer", 4, 2, 0, 0),
-        place("plant", -5, -3.5, 0, 0),
-        place("lamp", 3, -1, 0, 0),
-        place("trash", 2, 1, 0, 0),
+        place("executive_desk", 0, -1, 0, 0, "finance-desk"),
+        place("chair", 0, 0.5, 180, 0, "finance-chair"),
+        place("computer", 0, -1.25, 0, 0.78, "finance-monitor"),
+        place("keyboard", 0.2, -0.85, 0, 0.78, "finance-keyboard"),
+        place("mouse", 0.55, -0.85, 0, 0.78, "finance-mouse"),
+        place("cabinet", -5, 2, 0, 0, "finance-cabinet"),
+        place("bookshelf", 5, -3, 0, 0, "finance-shelf"),
+        place("printer", 4, 2, 0, 0, "finance-printer"),
+        place("plant", -5, -3.5, 0, 0, "finance-plant"),
+        place("lamp", 3, -1, 0, 0, "finance-lamp"),
+        place("trash", 2, 1, 0, 0, "finance-trash"),
       ],
       [createAgent(0, { name: "لیلا (مالی)", color: "#ffb74d", x: 1, z: 2 })],
     ),
@@ -233,18 +244,18 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
       16,
       14,
       [
-        place("round_table", 0, 0, 0, 0),
-        place("chair", 2.2, 0, 270, 0),
-        place("chair", -2.2, 0, 90, 0),
-        place("chair", 0, 2.2, 180, 0),
-        place("chair", 0, -2.2, 0, 0),
-        place("chair", 1.6, 1.6, 225, 0),
-        place("chair", -1.6, 1.6, 135, 0),
-        place("chair", 1.6, -1.6, 315, 0),
-        place("chair", -1.6, -1.6, 45, 0),
-        place("whiteboard", -6.5, 0, 90, 0),
-        place("plant", 5.5, -4, 0, 0),
-        place("plant", 5.5, 4, 0, 0),
+        place("round_table", 0, 0, 0, 0, "meeting-table"),
+        place("chair", 2.2, 0, 270, 0, "meeting-chair-e"),
+        place("chair", -2.2, 0, 90, 0, "meeting-chair-w"),
+        place("chair", 0, 2.2, 180, 0, "meeting-chair-s"),
+        place("chair", 0, -2.2, 0, 0, "meeting-chair-n"),
+        place("chair", 1.6, 1.6, 225, 0, "meeting-chair-se"),
+        place("chair", -1.6, 1.6, 135, 0, "meeting-chair-sw"),
+        place("chair", 1.6, -1.6, 315, 0, "meeting-chair-ne"),
+        place("chair", -1.6, -1.6, 45, 0, "meeting-chair-nw"),
+        place("whiteboard", -6.5, 0, 90, 0, "meeting-board"),
+        place("plant", 5.5, -4, 0, 0, "meeting-plant-a"),
+        place("plant", 5.5, 4, 0, 0, "meeting-plant-b"),
       ],
       [
         createAgent(0, { name: "نوید (هماهنگ‌کننده)", x: 3, z: 3 }),
@@ -262,19 +273,19 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
       18,
       12,
       [
-        place("cabinet", -4, -4, 0, 0),
-        place("coffee_machine", -5, -4, 0, 0.9),
-        place("microwave", -3, -4, 0, 0.9),
-        place("fridge", 2, -4, 0, 0),
-        place("sink", 4.5, -4, 0, 0),
-        place("dishwasher", 6.5, -4, 0, 0),
-        place("vending", 7, 1, 90, 0),
-        place("water_cooler", 7, 3.5, 0, 0),
-        place("round_table", -2, 2.5, 0, 0),
-        place("chair", 0, 2.5, 270, 0),
-        place("chair", -4, 2.5, 90, 0),
-        place("trash", 0, -2, 0, 0),
-        place("plant", -7, 3.5, 0, 0),
+        place("cabinet", -4, -4, 0, 0, "kitchen-cabinet"),
+        place("coffee_machine", -5, -4, 0, 0.9, "kitchen-coffee"),
+        place("microwave", -3, -4, 0, 0.9, "kitchen-microwave"),
+        place("fridge", 2, -4, 0, 0, "kitchen-fridge"),
+        place("sink", 4.5, -4, 0, 0, "kitchen-sink"),
+        place("dishwasher", 6.5, -4, 0, 0, "kitchen-dishwasher"),
+        place("vending", 7, 1, 90, 0, "kitchen-vending"),
+        place("water_cooler", 7, 3.5, 0, 0, "kitchen-cooler"),
+        place("round_table", -2, 2.5, 0, 0, "kitchen-table"),
+        place("chair", 0, 2.5, 270, 0, "kitchen-chair-a"),
+        place("chair", -4, 2.5, 90, 0, "kitchen-chair-b"),
+        place("trash", 0, -2, 0, 0, "kitchen-trash"),
+        place("plant", -7, 3.5, 0, 0, "kitchen-plant"),
       ],
       [createAgent(0, { name: "کیان (استراحت)", color: "#80cbc4", x: -2, z: 1 })],
     ),
@@ -295,17 +306,17 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
           wallType: "wall_drywall",
           doorSide: "e",
         }).concat([
-          place("cabinet", -16, -3, 0, 0),
-          place("coffee_machine", -17, -3, 0, 0.9),
-          place("microwave", -15, -3, 0, 0.9),
-          place("fridge", -12, -3, 0, 0),
-          place("sink", -10, -3, 0, 0),
-          place("round_table", -14, 1.5, 0, 0),
-          place("chair", -12.2, 1.5, 270, 0),
-          place("chair", -15.8, 1.5, 90, 0),
-          place("water_cooler", -10, 2.5, 0, 0),
-          place("plant", -17.5, 2.5, 0, 0),
-          place("lamp", -11, 1, 0, 0),
+          place("cabinet", -16, -3, 0, 0, "km-kitchen-cabinet"),
+          place("coffee_machine", -17, -3, 0, 0.9, "km-kitchen-coffee"),
+          place("microwave", -15, -3, 0, 0.9, "km-kitchen-microwave"),
+          place("fridge", -12, -3, 0, 0, "km-kitchen-fridge"),
+          place("sink", -10, -3, 0, 0, "km-kitchen-sink"),
+          place("round_table", -14, 1.5, 0, 0, "km-kitchen-table"),
+          place("chair", -12.2, 1.5, 270, 0, "km-kitchen-chair-a"),
+          place("chair", -15.8, 1.5, 90, 0, "km-kitchen-chair-b"),
+          place("water_cooler", -10, 2.5, 0, 0, "km-kitchen-cooler"),
+          place("plant", -17.5, 2.5, 0, 0, "km-kitchen-plant"),
+          place("lamp", -11, 1, 0, 0, "km-kitchen-lamp"),
         ]),
         agents: [
           createAgent(0, {
@@ -327,16 +338,16 @@ export const ROOM_PRESETS: readonly RoomPreset[] = [
           wallType: "wall_brick",
           doorSide: "w",
         }).concat([
-          place("executive_desk", 10, -1.5, 0, 0),
-          place("chair", 10, 0.2, 180, 0),
-          place("computer", 10, -1.8, 0, 0.78),
-          place("keyboard", 10.2, -1.4, 0, 0.78),
-          place("mouse", 10.55, -1.4, 0, 0.78),
-          place("bookshelf", 14.5, -3.5, 0, 0),
-          place("plant", 5.5, -4, 0, 0),
-          place("couch", 10, 4, 180, 0),
-          place("lamp", 13, -1, 0, 0),
-          place("mug", 9.4, -1.3, 0, 0.78),
+          place("executive_desk", 10, -1.5, 0, 0, "km-manager-desk"),
+          place("chair", 10, 0.2, 180, 0, "km-manager-chair"),
+          place("computer", 10, -1.8, 0, 0.78, "km-manager-monitor"),
+          place("keyboard", 10.2, -1.4, 0, 0.78, "km-manager-keyboard"),
+          place("mouse", 10.55, -1.4, 0, 0.78, "km-manager-mouse"),
+          place("bookshelf", 14.5, -3.5, 0, 0, "km-manager-shelf"),
+          place("plant", 5.5, -4, 0, 0, "km-manager-plant"),
+          place("couch", 10, 4, 180, 0, "km-manager-couch"),
+          place("lamp", 13, -1, 0, 0, "km-manager-lamp"),
+          place("mug", 9.4, -1.3, 0, 0.78, "km-manager-mug"),
         ]),
         agents: [
           createAgent(1, {
@@ -404,23 +415,28 @@ export function fitPresetToWorkspace(
     Math.min(2.5, Math.sqrt(scaleX * scaleZ)),
   );
 
-  const objects = preset.objects.map((object, index) => {
-    const next = {
-      ...object,
-      id: `preset-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
-      x: workspace.x + object.x * scaleX,
-      z: workspace.z + object.z * scaleZ,
-    };
-    if (isLengthScaledWall(object.type)) {
-      next.length =
-        object.length *
-        axisScaleForRotation(object.rotationY, scaleX, scaleZ);
-      next.scale = 1;
-    } else {
-      next.scale = object.scale * furnitureScale;
-    }
-    return next;
-  });
+  const objects = ensureUniqueObjectIds(
+    preset.objects.map((object, index) => {
+      const slug = object.id.startsWith("tpl-")
+        ? object.id.slice(4)
+        : String(index);
+      const next = {
+        ...object,
+        id: createObjectId(object.type, slug),
+        x: workspace.x + object.x * scaleX,
+        z: workspace.z + object.z * scaleZ,
+      };
+      if (isLengthScaledWall(object.type)) {
+        next.length =
+          object.length *
+          axisScaleForRotation(object.rotationY, scaleX, scaleZ);
+        next.scale = 1;
+      } else {
+        next.scale = object.scale * furnitureScale;
+      }
+      return next;
+    }),
+  );
 
   const agents = preset.agents.map((agent, index) => {
     const x = workspace.x + agent.x * scaleX;

@@ -44,26 +44,101 @@ export const COLLABORATOR_NAME = "مسعود (بک‌اند)";
 type WorkAgentProfile = {
   givenName: string;
   role: string;
+  agentLabel: string;
+  agentType: WorkTodo["agentType"];
+  avatarUrl: string;
+  color: string;
+  /** FA/EN keywords that route a free-text goal to this role. */
+  keywords: RegExp[];
 };
 
 const WORK_AGENT_PROFILES: Record<string, WorkAgentProfile> = {
   "hr-job-description-analyst": {
     givenName: "آرش",
     role: "منابع انسانی",
+    agentLabel: "AI Human Resource Deputy",
+    agentType: "chat",
+    avatarUrl: "https://avatarapi.runflare.run/public/55",
+    color: "#ffb74d",
+    keywords: [
+      /hr|human\s*resource|استخدام|جاب|job\s*desc|jd\b|شرح\s*شغل|استخدامی|منابع\s*انسانی/i,
+    ],
   },
   "professional-writing": {
     givenName: "سارا",
     role: "مدیر آموزش",
+    agentLabel: "AI Training Manager",
+    agentType: "chat",
+    avatarUrl: "https://avatarapi.runflare.run/public/56",
+    color: "#ce93d8",
+    keywords: [
+      /training|onboard|آموزش|آنبورد|پلن\s*آموزش|مستند|مستندات|writing|محتوا|مستندسازی/i,
+    ],
   },
   "webpage-designer": {
     givenName: "نیما",
     role: "فرانت‌اند",
+    agentLabel: "Frontend Developer",
+    agentType: "webpage",
+    avatarUrl: "https://avatarapi.runflare.run/public/80",
+    color: "#4fc3f7",
+    keywords: [
+      /webpage|website|landing|frontend|فرانت|صفحه|وب|ui|داشبورد|dashboard|طراحی\s*صفحه/i,
+    ],
+  },
+  "data-analyst": {
+    givenName: "النا",
+    role: "دیتا آنالیز",
+    agentLabel: "Data Analyst",
+    agentType: "chat",
+    avatarUrl: "https://avatarapi.runflare.run/public/62",
+    color: "#a5d6a7",
+    keywords: [
+      /data|analy|دیتا|تحلیل|آنالیز|آمار|متریک|kpi|گزارش\s*داده|insight/i,
+    ],
+  },
+  "product-manager": {
+    givenName: "مریم",
+    role: "محصول",
+    agentLabel: "Product Manager",
+    agentType: "chat",
+    avatarUrl: "https://avatarapi.runflare.run/public/70",
+    color: "#ef9a9a",
+    keywords: [
+      /product|roadmap|بک‌لاگ|بکلاگ|پروداکت|محصول|اسپرینت|نیازمندی|requirement|epic/i,
+    ],
+  },
+  "backend-engineer": {
+    givenName: "کسرا",
+    role: "بک‌اند",
+    agentLabel: "Backend Engineer",
+    agentType: "chat",
+    avatarUrl: "https://avatarapi.runflare.run/public/74",
+    color: "#80cbc4",
+    keywords: [
+      /backend|api|nestjs|server|بک‌اند|بکاند|سرویس|پایگاه|postgres|دیتابیس|endpoint/i,
+    ],
   },
   collaborator: {
     givenName: "مسعود",
     role: "بک‌اند",
+    agentLabel: "Collaborator",
+    agentType: "chat",
+    avatarUrl: "https://avatarapi.runflare.run/public/66",
+    color: "#80cbc4",
+    keywords: [],
   },
 };
+
+/** Preferred execution order when several roles match one goal. */
+const ROLE_PIPELINE_ORDER = [
+  "product-manager",
+  "hr-job-description-analyst",
+  "data-analyst",
+  "professional-writing",
+  "backend-engineer",
+  "webpage-designer",
+] as const;
 
 export function workAgentDisplayName(agentKey: string): string {
   const profile =
@@ -200,61 +275,124 @@ export function advanceWorkPipeline(todos: WorkTodo[]): {
 
 /** Sample pipeline matching the orchestrator Full Stack JD flow. */
 export function createSampleFullStackPipeline(): WorkPipeline {
-  const todos: WorkTodo[] = [
-    {
-      id: "01K8FSDEVTODO0000000000001",
-      title: "Create Full Stack Developer Job Description",
-      description:
-        "Generate a JD for Full Stack Developer (NestJS, Next.js, Postgres)",
+  return createPipelineFromGoal(
+    "create a job description for full stack developer (Nest JS and Next JS and Postgres) and create a training plan for him and then create a webpage for this post",
+  );
+}
+
+function newTodoId(index: number): string {
+  return `01K8GOALTODO${String(index + 1).padStart(12, "0")}`;
+}
+
+function truncateGoal(goal: string, max = 72): string {
+  const clean = goal.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max - 1)}…`;
+}
+
+function matchRolesForGoal(goal: string): string[] {
+  const matched = ROLE_PIPELINE_ORDER.filter((key) => {
+    const profile = WORK_AGENT_PROFILES[key];
+    if (!profile) return false;
+    return profile.keywords.some((pattern) => pattern.test(goal));
+  });
+  if (matched.length > 0) return matched;
+
+  // Split on connectors; map each clause if possible.
+  const clauses = goal
+    .split(/\bthen\b| و بعد | سپس | بعد |، و | and then | and /i)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 3);
+
+  const fromClauses: string[] = [];
+  for (const clause of clauses) {
+    for (const key of ROLE_PIPELINE_ORDER) {
+      const profile = WORK_AGENT_PROFILES[key];
+      if (!profile) continue;
+      if (
+        profile.keywords.some((pattern) => pattern.test(clause)) &&
+        !fromClauses.includes(key)
+      ) {
+        fromClauses.push(key);
+      }
+    }
+  }
+  if (fromClauses.length > 0) return fromClauses;
+
+  // Fallback: product scopes the work, then a maker executes.
+  return ["product-manager", "backend-engineer"];
+}
+
+function titleForRole(agentKey: string, goal: string): string {
+  const short = truncateGoal(goal, 48);
+  switch (agentKey) {
+    case "hr-job-description-analyst":
+      return `تهیه شرح شغل · ${short}`;
+    case "professional-writing":
+      return `مستند / پلن آموزش · ${short}`;
+    case "webpage-designer":
+      return `طراحی صفحه · ${short}`;
+    case "data-analyst":
+      return `تحلیل داده · ${short}`;
+    case "product-manager":
+      return `تعریف محصول · ${short}`;
+    case "backend-engineer":
+      return `پیاده‌سازی بک‌اند · ${short}`;
+    default:
+      return `اجرای کار · ${short}`;
+  }
+}
+
+function descriptionForRole(agentKey: string, goal: string): string {
+  const profile = WORK_AGENT_PROFILES[agentKey]!;
+  return `${profile.role}: انجام بخش مربوط به مسئولیت خود از هدف «${truncateGoal(goal, 100)}».`;
+}
+
+/**
+ * Build a runnable local pipeline from a free-text goal.
+ * Roles are picked by keyword heuristics (no gateway / LLM).
+ */
+export function createPipelineFromGoal(goal: string): WorkPipeline {
+  const trimmed = goal.replace(/\s+/g, " ").trim();
+  const safeGoal =
+    trimmed.length > 0
+      ? trimmed
+      : "یک هدف نمونه برای تیم آفیس تعریف و اجرا کن";
+
+  const roleKeys = matchRolesForGoal(safeGoal);
+  const now = new Date().toISOString();
+  const todos: WorkTodo[] = roleKeys.map((agentKey, index) => {
+    const profile = WORK_AGENT_PROFILES[agentKey]!;
+    const id = newTodoId(index);
+    const prevId = index > 0 ? newTodoId(index - 1) : null;
+    return {
+      id,
+      title: titleForRole(agentKey, safeGoal),
+      description: descriptionForRole(agentKey, safeGoal),
       status: "pending",
-      agentKey: "hr-job-description-analyst",
-      agentLabel: "AI Human Resource Deputy",
-      avatarUrl: "https://avatarapi.runflare.run/public/55",
-      agentType: "chat",
-      dependencies: [],
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "01K8FSDEVTODO0000000000002",
-      title: "Create Onboarding Training Plan",
-      description:
-        "Build a structured training plan for the Full Stack Developer role from the JD",
-      status: "pending",
-      agentKey: "professional-writing",
-      agentLabel: "AI Training Manager",
-      avatarUrl: "https://avatarapi.runflare.run/public/56",
-      agentType: "chat",
-      dependencies: ["01K8FSDEVTODO0000000000001"],
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "01K8FSDEVTODO0000000000003",
-      title: "Create Career Post Webpage",
-      description: "Design a public webpage for this Full Stack Developer job post",
-      status: "pending",
-      agentKey: "webpage-designer",
-      agentLabel: "Frontend Developer",
-      avatarUrl: "https://avatarapi.runflare.run/public/80",
-      agentType: "webpage",
-      dependencies: ["01K8FSDEVTODO0000000000002"],
-      createdAt: new Date().toISOString(),
-    },
-  ];
+      agentKey,
+      agentLabel: profile.agentLabel,
+      avatarUrl: profile.avatarUrl,
+      agentType: profile.agentType,
+      dependencies: prevId ? [prevId] : [],
+      createdAt: now,
+    };
+  });
 
   return {
-    id: "01K8FSDEVTODOMSG0000000001",
-    goal:
-      "create a job description for full stack developer (Nest JS and Next JS and Postgres) and create a training plan for him and then create a webpage for this post",
+    id: `goal-${Date.now().toString(36)}`,
+    goal: safeGoal,
     todos: reconcileTodoStatuses(todos),
     running: false,
   };
 }
 
-const AGENT_KEY_COLORS: Record<string, string> = {
-  "hr-job-description-analyst": "#ffb74d",
-  "professional-writing": "#ce93d8",
-  "webpage-designer": "#4fc3f7",
-};
+const AGENT_KEY_COLORS: Record<string, string> = Object.fromEntries(
+  Object.entries(WORK_AGENT_PROFILES).map(([key, profile]) => [
+    key,
+    profile.color,
+  ]),
+);
 
 function seatPoints(objects: PlacedObject[]): Array<{ x: number; z: number }> {
   const desks = objects.filter(
@@ -296,62 +434,120 @@ export function dialogueForWorkTodo(
   leadName: string,
   peerName: string,
 ): DialogueTurn[] {
+  const focus = truncateGoal(todo.description || todo.title, 90);
   switch (todo.agentKey) {
     case "hr-job-description-analyst":
       return [
         {
           speaker: "a",
-          text: `${peerName}، دارم JD فول‌استک می‌نویسم: NestJS، Next.js و Postgres. سطح senior و full-time.`,
+          text: `${peerName}، دارم روی این هدف کار می‌کنم: ${focus}`,
         },
         {
           speaker: "b",
-          text: `${leadName}، حتماً auth، API design و تست رو هم توی responsibilities بگذار.`,
+          text: `${leadName}، responsibilities، سطح seniority و مهارت‌های الزامی را شفاف بنویس.`,
         },
         {
           speaker: "a",
-          text: `آره — TypeScript end-to-end، مدل‌سازی Postgres و query optimization هم هایلایت می‌کنم.`,
+          text: `باشه — draft JD را با معیارهای استخدام آماده می‌کنم.`,
         },
         {
           speaker: "b",
-          text: `عالی. وقتی draft آماده شد بده تا با Engineering Manager مرور کنیم.`,
+          text: `عالی. بعد از تایید می‌دهیم به مرحلهٔ بعد.`,
         },
       ];
     case "professional-writing":
       return [
         {
           speaker: "a",
-          text: `${peerName}، از روی JD یک پلن ۳۰/۶۰/۹۰ برای آنبوردینگ فول‌استک می‌سازم.`,
+          text: `${peerName}، مستند/پلن آموزش را بر اساس «${truncateGoal(todo.title, 50)}» می‌نویسم.`,
         },
         {
           speaker: "b",
-          text: `${leadName}، هفته‌به‌هفته milestone و پروژهٔ عملی Nest و Next بگذار.`,
+          text: `${leadName}، milestoneهای هفته‌به‌هفته و معیار موفقیت بگذار.`,
         },
         {
           speaker: "a",
-          text: `حتماً — چک‌پوینت منتورینگ و معیار موفقیت هر فاز را هم جدول می‌کنم.`,
+          text: `حتماً — ساختار ۳۰/۶۰/۹۰ و چک‌لیست تحویل را هم اضافه می‌کنم.`,
         },
         {
           speaker: "b",
-          text: `خوبه. بعد از تایید، می‌دیم به فرانت برای صفحهٔ شغلی.`,
+          text: `خوبه؛ بعد می‌فرستیم برای مرحلهٔ بعدی تیم.`,
         },
       ];
     case "webpage-designer":
       return [
         {
           speaker: "a",
-          text: `${peerName}، صفحهٔ شغلی می‌سازم: هیرو با Nest / Next / Postgres و CTA درخواست.`,
+          text: `${peerName}، صفحه/داشبورد را برای «${truncateGoal(todo.title, 50)}» طراحی می‌کنم.`,
         },
         {
           speaker: "b",
-          text: `${leadName}، بخش مسئولیت‌ها، مهارت‌ها و مسیر رشد از پلن آموزش را هم بیاور.`,
+          text: `${leadName}، CTA واضح، سلسله‌مراتب بصری و نسخهٔ موبایل را چک کن.`,
         },
         {
           speaker: "a",
-          text: `باشه — overview کوتاه، مهارت‌ها، و یک بلوک Apply واضح.`,
+          text: `باشه — هیرو، بخش محتوا و بلوک اقدام را می‌بندم.`,
         },
         {
           speaker: "b",
-          text: `اگر موبایل هم درست باشه، آماده‌ایم برای انتشار.`,
+          text: `اگر ریسپانسیو درست باشد آماده‌ایم.`,
+        },
+      ];
+    case "data-analyst":
+      return [
+        {
+          speaker: "a",
+          text: `${peerName}، دارم داده‌های مربوط به «${truncateGoal(todo.title, 50)}» را تحلیل می‌کنم.`,
+        },
+        {
+          speaker: "b",
+          text: `${leadName}، متریک‌های کلیدی و outlierها را جداگانه هایلایت کن.`,
+        },
+        {
+          speaker: "a",
+          text: `آره — خلاصه insight و پیشنهاد اقدام را هم می‌نویسم.`,
+        },
+        {
+          speaker: "b",
+          text: `عالی؛ خروجی را برای مرحلهٔ بعد آماده کن.`,
+        },
+      ];
+    case "product-manager":
+      return [
+        {
+          speaker: "a",
+          text: `${peerName}، دارم scope و اولویت‌ها را برای «${truncateGoal(todo.title, 50)}» می‌بندم.`,
+        },
+        {
+          speaker: "b",
+          text: `${leadName}، acceptance criteria و وابستگی‌ها را هم مشخص کن.`,
+        },
+        {
+          speaker: "a",
+          text: `حتماً — یک backlog کوتاه و ترتیب اجرا می‌دهم.`,
+        },
+        {
+          speaker: "b",
+          text: `خوبه؛ بعد تیم اجرا را درگیر می‌کنیم.`,
+        },
+      ];
+    case "backend-engineer":
+      return [
+        {
+          speaker: "a",
+          text: `${peerName}، API/سرویس مربوط به «${truncateGoal(todo.title, 50)}» را پیاده می‌کنم.`,
+        },
+        {
+          speaker: "b",
+          text: `${leadName}، auth، validation و تست‌های اصلی را فراموش نکن.`,
+        },
+        {
+          speaker: "a",
+          text: `باشه — قرارداد API و مدل داده را هم مستند می‌کنم.`,
+        },
+        {
+          speaker: "b",
+          text: `اگر آماده شد، فرانت می‌تواند وصل شود.`,
         },
       ];
     default:
@@ -363,6 +559,14 @@ export function dialogueForWorkTodo(
         {
           speaker: "b",
           text: `${leadName}، اگر چیزی لازم داری بگو تا کمک کنم.`,
+        },
+        {
+          speaker: "a",
+          text: `تمرکزم روی تحویل همین بخش از هدف است.`,
+        },
+        {
+          speaker: "b",
+          text: `اوکی — بعد از اتمام سراغ مرحلهٔ بعد می‌رویم.`,
         },
       ];
   }
@@ -386,19 +590,31 @@ export function agentsForPipeline(
   const seats = seatPoints(objects);
   const byId = new Map(existing.map((agent) => [agent.id, agent]));
 
-  const todoAgents = pipeline.todos.map((todo, index) => {
-    const id = agentIdForTodo(todo);
-    const name = workAgentDisplayName(todo.agentKey);
+  // One floor agent per unique role (multiple todos may share a key).
+  const uniqueKeys: string[] = [];
+  for (const todo of pipeline.todos) {
+    if (!uniqueKeys.includes(todo.agentKey)) uniqueKeys.push(todo.agentKey);
+  }
+
+  const todoAgents = uniqueKeys.map((agentKey, index) => {
+    const id = `work-agent-${agentKey}`;
+    const name = workAgentDisplayName(agentKey);
     const prev = byId.get(id);
     const seat = seats[index % seats.length]!;
-    // Only the in-progress owner types at their desk; blocked wait seated.
-    const deskState: AgentState = agentStateFromTodoStatus(todo.status);
+    const ownTodos = pipeline.todos.filter((todo) => todo.agentKey === agentKey);
+    const active = ownTodos.some((todo) => todo.status === "in_progress");
+    const waiting =
+      !active && ownTodos.every((todo) => todo.status === "blocked");
+    const deskState: AgentState = active
+      ? "working"
+      : waiting
+        ? "sitting"
+        : "idle";
 
     return createAgent(index, {
       id,
       name,
-      color: AGENT_KEY_COLORS[todo.agentKey] ?? prev?.color ?? "#81c784",
-      // Preserve live position so AgentSystem can walk (never snap).
+      color: AGENT_KEY_COLORS[agentKey] ?? prev?.color ?? "#81c784",
       x: prev?.x ?? seat.x,
       z: prev?.z ?? seat.z,
       homeX: seat.x,

@@ -126,11 +126,20 @@ export function OfficeScene({
   onPeerChat,
   onWorkSessionDone,
 }: OfficeSceneProps) {
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [grabId, setGrabId] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const drawMode =
     building.drawMode === "workspace" || building.drawMode === "wall";
+  const editMode = building.editMode;
+  const canEditScene = editMode && !drawMode;
   const isWorkspaceDraw = building.drawMode === "workspace";
   const isWallDraw = building.drawMode === "wall";
+
+  useEffect(() => {
+    if (editMode && !drawMode) return;
+    setGrabId(null);
+    setDragging(false);
+  }, [drawMode, editMode]);
   const activeY = getFloorWorldY(building, building.activeFloorId);
   const lighting = LIGHTING[building.lightingMode] ?? LIGHTING.day;
   const cameraTarget = useMemo<[number, number, number]>(
@@ -199,7 +208,13 @@ export function OfficeScene({
         width: "100%",
         height: "100%",
         background: lighting.bg,
-        cursor: draggingId ? "grabbing" : drawMode ? "crosshair" : "default",
+        cursor: dragging
+          ? "grabbing"
+          : drawMode
+            ? "crosshair"
+            : editMode
+              ? "default"
+              : "default",
       }}
       onCreated={({ camera, gl }) => {
         camera.lookAt(...cameraTarget);
@@ -212,7 +227,7 @@ export function OfficeScene({
         });
       }}
       onPointerMissed={() => {
-        if (drawMode || draggingId) return;
+        if (drawMode || grabId) return;
         onSelectObject("");
         onSelectWorkspace?.("");
       }}
@@ -220,7 +235,7 @@ export function OfficeScene({
       <SceneBackground color={lighting.bg} />
       <OrbitControls
         makeDefault
-        enabled={!draggingId && !drawMode}
+        enabled={!grabId && !drawMode}
         target={cameraTarget}
         enableDamping
         dampingFactor={0.08}
@@ -232,21 +247,29 @@ export function OfficeScene({
         maxPolarAngle={Math.PI / 2.05}
       />
       <FocusActiveFloor targetY={activeY} />
-      <CameraWasdControls enabled={!draggingId} />
+      <CameraWasdControls enabled={!grabId} />
       <ObjectDragController
-        draggingId={drawMode ? null : draggingId}
+        grabId={canEditScene ? grabId : null}
+        dragging={dragging}
         floorY={activeY}
-        onMove={(x, z) => {
-          if (!draggingId) return;
-          onMoveObject(draggingId, x, z);
+        thresholdPx={10}
+        onPromote={() => {
+          if (!grabId) return;
+          setDragging(true);
+          onDragBegin?.(grabId);
         }}
-        onEnd={() => {
-          if (draggingId) onDragEnd?.(draggingId);
-          setDraggingId(null);
+        onMove={(x, z) => {
+          if (!grabId) return;
+          onMoveObject(grabId, x, z);
+        }}
+        onEnd={(moved) => {
+          if (moved && grabId) onDragEnd?.(grabId);
+          setGrabId(null);
+          setDragging(false);
         }}
       />
       <WorkspaceDrawController
-        enabled={drawMode}
+        enabled={drawMode && editMode}
         floorY={activeY}
         shape={isWorkspaceDraw ? building.workspaceShape : "rectangle"}
         snapToGrid={building.snapToGrid}
@@ -286,12 +309,16 @@ export function OfficeScene({
             y={y}
             dimmed={building.showAllFloors && !isActive}
             selectedObjectId={isActive ? building.selectedObjectId : null}
-            onSelectObject={isActive && !drawMode ? onSelectObject : undefined}
+            onSelectObject={
+              isActive && canEditScene ? onSelectObject : undefined
+            }
             selectedWorkspaceId={
               isActive ? building.selectedWorkspaceId : null
             }
-            onSelectWorkspace={isActive ? onSelectWorkspace : undefined}
-            workspaceInteractive={true}
+            onSelectWorkspace={
+              isActive && canEditScene ? onSelectWorkspace : undefined
+            }
+            workspaceInteractive={canEditScene}
             lampsOn={building.lampsOn}
             selectedAgentId={isActive ? selectedAgentId : null}
             focusRequest={isActive ? focusRequest : null}
@@ -301,11 +328,11 @@ export function OfficeScene({
             onPeerChat={isActive ? onPeerChat : undefined}
             onWorkSessionDone={isActive ? onWorkSessionDone : undefined}
             onDragStart={
-              isActive && !drawMode
+              isActive && canEditScene
                 ? (objectId) => {
-                    onDragBegin?.(objectId);
                     onSelectObject(objectId);
-                    setDraggingId(objectId);
+                    setDragging(false);
+                    setGrabId(objectId);
                   }
                 : undefined
             }

@@ -88,8 +88,13 @@ type RuntimeAgent = OfficeAgent & {
 const WALK_SPEED = 1.7;
 const ARRIVE_EPS = 0.22;
 const AGENT_RADIUS = 0.18;
-const PEER_CHAT_DIST = 1.35;
+/** Visual body is scaled ~1.35 — keep a clear gap while talking. */
+const CHAT_PAIR_GAP = 2.2;
+/** Start scripted/casual chat once both are within this of each other. */
+const PEER_CHAT_DIST = CHAT_PAIR_GAP + 0.45;
 const PEER_APPROACH_DIST = 5.5;
+/** Soft collision so agents never sit inside each other. */
+const MIN_AGENT_GAP = 1.35;
 const PEER_CHAT_COOLDOWN_MS = 28000;
 const TYPE_MS_PER_CHAR = 28;
 const THINK_MS_MIN = 900;
@@ -292,6 +297,99 @@ function estimateDialogueMs(turns: DialogueTurn[]): number {
   return total;
 }
 
+/** Stand beside a peer — never on top of them. */
+function standBeside(
+  peerX: number,
+  peerZ: number,
+  fromX: number,
+  fromZ: number,
+  gap = CHAT_PAIR_GAP,
+): NavPoint {
+  const dx = fromX - peerX;
+  const dz = fromZ - peerZ;
+  const dist = Math.hypot(dx, dz);
+  if (dist < 0.05) {
+    return { x: peerX + gap, z: peerZ };
+  }
+  return {
+    x: peerX + (dx / dist) * gap,
+    z: peerZ + (dz / dist) * gap,
+  };
+}
+
+/** Push a chatting pair apart around their midpoint until gap is met. */
+function ensureChatSpacing(
+  a: RuntimeAgent,
+  b: RuntimeAgent,
+  gap = CHAT_PAIR_GAP,
+) {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist >= gap) return;
+  if (dist < 0.05) {
+    a.x -= gap / 2;
+    b.x += gap / 2;
+  } else {
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const midX = (a.x + b.x) / 2;
+    const midZ = (a.z + b.z) / 2;
+    a.x = midX - (nx * gap) / 2;
+    a.z = midZ - (nz * gap) / 2;
+    b.x = midX + (nx * gap) / 2;
+    b.z = midZ + (nz * gap) / 2;
+  }
+  const aClamped = clampToBounds(a.x, a.z, a.roamBounds);
+  const bClamped = clampToBounds(b.x, b.z, b.roamBounds);
+  a.x = aClamped.x;
+  a.z = aClamped.z;
+  b.x = bClamped.x;
+  b.z = bClamped.z;
+  // If clamp collapsed them again, force an X offset inside bounds.
+  if (Math.hypot(b.x - a.x, b.z - a.z) < gap * 0.75) {
+    const side = a.x <= b.x ? -1 : 1;
+    const shiftedA = clampToBounds(a.x + side * (gap / 2), a.z, a.roamBounds);
+    const shiftedB = clampToBounds(b.x - side * (gap / 2), b.z, b.roamBounds);
+    a.x = shiftedA.x;
+    a.z = shiftedA.z;
+    b.x = shiftedB.x;
+    b.z = shiftedB.z;
+  }
+  a.targetX = a.x;
+  a.targetZ = a.z;
+  b.targetX = b.x;
+  b.targetZ = b.z;
+}
+
+function separateOverlappingAgents(agents: RuntimeAgent[]) {
+  for (let i = 0; i < agents.length; i += 1) {
+    const a = agents[i]!;
+    for (let j = i + 1; j < agents.length; j += 1) {
+      const b = agents[j]!;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist >= MIN_AGENT_GAP || dist < 1e-6) {
+        if (dist < 1e-6) {
+          b.x += MIN_AGENT_GAP;
+        }
+        continue;
+      }
+      const push = (MIN_AGENT_GAP - dist) / 2;
+      const nx = dx / dist;
+      const nz = dz / dist;
+      // Prefer not to shove walkers off their path as hard.
+      const aWeight = a.state === "walking" ? 0.25 : 0.5;
+      const bWeight = b.state === "walking" ? 0.25 : 0.5;
+      a.x -= nx * push * (aWeight * 2);
+      a.z -= nz * push * (aWeight * 2);
+      b.x += nx * push * (bWeight * 2);
+      b.z += nz * push * (bWeight * 2);
+    }
+  }
+}
+
 function startPeerChat(
   a: RuntimeAgent,
   b: RuntimeAgent,
@@ -301,6 +399,8 @@ function startPeerChat(
 ) {
   const turns = scriptedTurns ?? buildPeerDialogue(a, b);
   const totalMs = estimateDialogueMs(turns);
+
+  ensureChatSpacing(a, b, CHAT_PAIR_GAP);
 
   a.state = "chatting";
   b.state = "chatting";
@@ -615,7 +715,7 @@ export function AgentSystem({
     );
     beginWalkTo(
       partner,
-      { x: lead.homeX + 1.15, z: lead.homeZ },
+      { x: lead.homeX + CHAT_PAIR_GAP, z: lead.homeZ },
       objectsRef.current,
       floorHalfW,
       floorHalfD,
@@ -696,7 +796,13 @@ export function AgentSystem({
           b.meetTargetId = a.id;
           a.pendingChatTurns = null;
           b.pendingChatTurns = null;
-          beginWalkTo(a, { x: b.x, z: b.z }, blockers, floorHalfW, floorHalfD);
+          beginWalkTo(
+            a,
+            standBeside(b.x, b.z, a.x, a.z, CHAT_PAIR_GAP),
+            blockers,
+            floorHalfW,
+            floorHalfD,
+          );
         }
       }
     }
@@ -719,6 +825,20 @@ export function AgentSystem({
       startPeerChat(agent, partner, now, onPeerChatRef.current);
       onStateRef.current?.(agent.id, "chatting");
       onStateRef.current?.(partner.id, "chatting");
+    }
+
+    // Soft collision — keep bodies from nesting into each other.
+    separateOverlappingAgents(live);
+
+    for (const agent of live) {
+      if (agent.state === "chatting" && agent.chatPartnerId) {
+        const partner = live.find((entry) => entry.id === agent.chatPartnerId);
+        if (partner && agent.chatIsA) {
+          ensureChatSpacing(agent, partner, CHAT_PAIR_GAP);
+          agent.facing = Math.atan2(partner.x - agent.x, partner.z - agent.z);
+          partner.facing = Math.atan2(agent.x - partner.x, agent.z - partner.z);
+        }
+      }
     }
 
     for (const agent of live) {
@@ -790,10 +910,15 @@ export function AgentSystem({
           const isLead = agent.id === workLeadRef.current;
           const goal = isLead
             ? { x: agent.homeX, z: agent.homeZ }
-            : {
-                x: partner.x + (partner.x >= agent.x ? -1.1 : 1.1),
-                z: partner.z,
-              };
+            : agent.pendingChatTurns
+              ? { x: partner.homeX + CHAT_PAIR_GAP, z: partner.homeZ }
+              : standBeside(
+                  partner.x,
+                  partner.z,
+                  agent.x,
+                  agent.z,
+                  CHAT_PAIR_GAP,
+                );
           beginWalkTo(agent, goal, blockers, floorHalfW, floorHalfD);
         }
       }

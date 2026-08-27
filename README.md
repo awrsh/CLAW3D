@@ -1,6 +1,6 @@
 # Claw3D Sample (`new-version`)
 
-سمپل مستقل آفیس سه‌بعدی — **بدون Gateway** · پورت **3001**
+سمپل مستقل آفیس سه‌بعدی — **بدون Gateway** · پورت **5050**
 
 ```bash
 cd new-version

@@ -370,10 +370,26 @@ export const OfficeObjects = memo(function OfficeObjects({
             }
             scale={wall ? 1 : usesLegacyAbsolute ? 1 : object.scale}
             onPointerDown={(event) => {
+              if (!onSelect && !onDragStart) return;
               event.stopPropagation();
               onSelect?.(object.id);
               onDragStart?.(object.id);
             }}
+            onPointerOver={
+              onDragStart
+                ? (event) => {
+                    event.stopPropagation();
+                    document.body.style.cursor = "grab";
+                  }
+                : undefined
+            }
+            onPointerOut={
+              onDragStart
+                ? () => {
+                    document.body.style.cursor = "default";
+                  }
+                : undefined
+            }
           >
             <ObjectVisual
               object={object}

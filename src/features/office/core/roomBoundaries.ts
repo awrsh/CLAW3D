@@ -1,4 +1,5 @@
 import {
+  createObjectId,
   createPlacedObject,
   type ObjectType,
   type PlacedObject,
@@ -33,9 +34,11 @@ function wall(
   z: number,
   length: number,
   rotationY: number,
+  slug: string,
 ): PlacedObject {
   boundarySeq += 1;
   return createPlacedObject(type, boundarySeq, {
+    id: createObjectId(type, slug),
     x,
     z,
     rotationY,
@@ -71,34 +74,76 @@ export function createRoomBoundary({
 
   const items: PlacedObject[] = [];
 
+  let wallSeq = 0;
+  const nextSlug = (kind: string) => {
+    wallSeq += 1;
+    return `${kind}-${wallSeq}`;
+  };
+
   const addHorizontal = (
     z: number,
-    _side: "n" | "s",
+    side: "n" | "s",
     withDoor: boolean,
   ) => {
     if (!withDoor) {
-      items.push(wall(wallType, cx, z, fullW, 0));
+      items.push(wall(wallType, cx, z, fullW, 0, nextSlug(`wall-${side}`)));
       return;
     }
     const remain = (fullW - gap) / 2;
-    items.push(wall(wallType, cx - gap / 2 - remain / 2, z, remain, 0));
-    items.push(wall(wallType, cx + gap / 2 + remain / 2, z, remain, 0));
-    items.push(wall("door", cx, z, gap, 0));
+    items.push(
+      wall(
+        wallType,
+        cx - gap / 2 - remain / 2,
+        z,
+        remain,
+        0,
+        nextSlug(`wall-${side}-a`),
+      ),
+    );
+    items.push(
+      wall(
+        wallType,
+        cx + gap / 2 + remain / 2,
+        z,
+        remain,
+        0,
+        nextSlug(`wall-${side}-b`),
+      ),
+    );
+    items.push(wall("door", cx, z, gap, 0, nextSlug(`door-${side}`)));
   };
 
   const addVertical = (
     x: number,
-    _side: "e" | "w",
+    side: "e" | "w",
     withDoor: boolean,
   ) => {
     if (!withDoor) {
-      items.push(wall(wallType, x, cz, fullD, 90));
+      items.push(wall(wallType, x, cz, fullD, 90, nextSlug(`wall-${side}`)));
       return;
     }
     const remain = (fullD - gap) / 2;
-    items.push(wall(wallType, x, cz - gap / 2 - remain / 2, remain, 90));
-    items.push(wall(wallType, x, cz + gap / 2 + remain / 2, remain, 90));
-    items.push(wall("door", x, cz, gap, 90));
+    items.push(
+      wall(
+        wallType,
+        x,
+        cz - gap / 2 - remain / 2,
+        remain,
+        90,
+        nextSlug(`wall-${side}-a`),
+      ),
+    );
+    items.push(
+      wall(
+        wallType,
+        x,
+        cz + gap / 2 + remain / 2,
+        remain,
+        90,
+        nextSlug(`wall-${side}-b`),
+      ),
+    );
+    items.push(wall("door", x, cz, gap, 90, nextSlug(`door-${side}`)));
   };
 
   addHorizontal(northZ, "n", doorSide === "n");

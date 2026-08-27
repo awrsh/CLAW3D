@@ -1,6 +1,7 @@
 import { createRoomBoundary } from "@/features/office/core/roomBoundaries";
 import {
   createPlacedObject,
+  createObjectId,
   type PlacedObject,
 } from "@/features/office/core/objects";
 import type { DrawWallType } from "@/features/office/core/roomConfig";
@@ -35,6 +36,6 @@ export function wallsFromDraft(
     doorSide: "s",
   }).map((object, index) => ({
     ...object,
-    id: `obj-${Date.now()}-wall-${indexBase + index}-${Math.random().toString(36).slice(2, 6)}`,
+    id: createObjectId(object.type, `drawn-${indexBase + index}`),
   }));
 }

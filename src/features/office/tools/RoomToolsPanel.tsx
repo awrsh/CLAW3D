@@ -1,15 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createAgent } from "@/features/office/core/agents";
 import {
+  changePlacedObjectType,
   createPlacedObject,
+  formatObjectIdShort,
   getObjectLabel,
   isWallType,
   OBJECT_CATALOG,
   OBJECT_CATEGORIES,
   OBJECT_LIMITS,
   snapOntoNearbySurface,
+  swapPlacedObjectTransforms,
   type ObjectCategory,
   type ObjectType,
   type PlacedObject,
@@ -29,6 +32,17 @@ import {
   type StructureConfig,
   type WorkspaceUnit,
 } from "@/features/office/core/roomConfig";
+import {
+  ColorField,
+  EmptyHint,
+  GhostButton,
+  PanelShell,
+  SectionLabel,
+  SegmentedControl,
+  SliderField,
+  ToggleRow,
+  studioSurfaceClass,
+} from "@/features/office/ui/studioControls";
 
 type RoomToolsPanelProps = {
   building: BuildingConfig;
@@ -40,102 +54,14 @@ type RoomToolsPanelProps = {
   onBeforeObjectEdit?: () => void;
 };
 
-function NumberField({
-  label,
-  hint,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  onEditStart,
-}: {
-  label: string;
-  hint?: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-  onEditStart?: () => void;
-}) {
-  return (
-    <label className="block space-y-1.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-          {label}
-        </span>
-        <span className="font-mono text-[10px] text-amber-400/80">
-          {value.toFixed(2)}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onPointerDown={onEditStart}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-amber-950/50 accent-amber-500"
-      />
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onFocus={onEditStart}
-          onChange={(event) => {
-            const next = Number(event.target.value);
-            if (Number.isFinite(next)) {
-              onChange(Math.min(max, Math.max(min, next)));
-            }
-          }}
-          className="w-full rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 font-mono text-[11px] text-amber-100 outline-none focus:border-amber-500/50"
-        />
-        {hint ? (
-          <span className="shrink-0 text-[9px] uppercase tracking-wider text-amber-500/50">
-            {hint}
-          </span>
-        ) : null}
-      </div>
-    </label>
-  );
-}
+type ToolsTab = "place" | "edit" | "space" | "build";
 
-function ColorField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="flex items-center justify-between gap-3">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-        {label}
-      </span>
-      <span className="flex items-center gap-2">
-        <input
-          type="color"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-7 w-9 cursor-pointer rounded border border-amber-900/25 bg-transparent p-0.5"
-        />
-        <input
-          type="text"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="w-[7.5rem] rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 font-mono text-[11px] text-amber-100 outline-none focus:border-amber-500/50"
-        />
-      </span>
-    </label>
-  );
-}
+const TOOLS_TABS: Array<{ value: ToolsTab; label: string }> = [
+  { value: "place", label: "جایگذاری" },
+  { value: "edit", label: "ویرایش" },
+  { value: "space", label: "فضا" },
+  { value: "build", label: "ساختمان" },
+];
 
 /**
  * On-site Tools: floors, structure connectors, and placeable objects.
@@ -148,18 +74,44 @@ export function RoomToolsPanel({
   onClose,
   onBeforeObjectEdit,
 }: RoomToolsPanelProps) {
+  const [tab, setTab] = useState<ToolsTab>("place");
   const [objectCategory, setObjectCategory] =
     useState<ObjectCategory>("structure");
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const prevSelectedId = useRef<string | null>(null);
+
   const active = getActiveFloor(building);
   const selected = getSelectedObject(building);
   const workspaces = active.workspaces ?? [];
   const selectedWorkspace =
     workspaces.find((unit) => unit.id === building.selectedWorkspaceId) ??
     null;
-  const catalogItems = useMemo(
-    () => OBJECT_CATALOG.filter((item) => item.category === objectCategory),
-    [objectCategory],
-  );
+
+  const catalogItems = useMemo(() => {
+    const q = catalogQuery.trim().toLowerCase();
+    return OBJECT_CATALOG.filter((item) => {
+      if (item.category !== objectCategory) return false;
+      if (!q) return true;
+      return (
+        item.label.toLowerCase().includes(q) ||
+        item.type.toLowerCase().includes(q)
+      );
+    });
+  }, [catalogQuery, objectCategory]);
+
+  // Jump to Edit when user selects an object on the scene.
+  useEffect(() => {
+    const id = building.selectedObjectId;
+    if (id && id !== prevSelectedId.current) {
+      setTab("edit");
+    }
+    prevSelectedId.current = id;
+  }, [building.selectedObjectId]);
+
+  // Prefer Place tab while drawing walls.
+  useEffect(() => {
+    if (building.drawMode === "wall") setTab("place");
+  }, [building.drawMode]);
 
   const patchBuilding = (partial: Partial<BuildingConfig>) => {
     onChange({ ...building, ...partial });
@@ -203,6 +155,46 @@ export function RoomToolsPanel({
                 object.id === selected.id
                   ? { ...object, [key]: value }
                   : object,
+              ),
+            },
+      ),
+    });
+  };
+
+  const changeSelectedType = (nextType: ObjectType) => {
+    if (!selected) return;
+    onBeforeObjectEdit?.();
+    onChange({
+      ...building,
+      floors: building.floors.map((floor) =>
+        floor.id !== active.id
+          ? floor
+          : {
+              ...floor,
+              objects: floor.objects.map((object) =>
+                object.id === selected.id
+                  ? changePlacedObjectType(object, nextType)
+                  : object,
+              ),
+            },
+      ),
+    });
+  };
+
+  const swapSelectedWith = (otherId: string) => {
+    if (!selected || otherId === selected.id) return;
+    onBeforeObjectEdit?.();
+    onChange({
+      ...building,
+      floors: building.floors.map((floor) =>
+        floor.id !== active.id
+          ? floor
+          : {
+              ...floor,
+              objects: swapPlacedObjectTransforms(
+                floor.objects,
+                selected.id,
+                otherId,
               ),
             },
       ),
@@ -364,12 +356,12 @@ export function RoomToolsPanel({
   };
 
   const addObject = (type: ObjectType) => {
-    // Walls/doors: enter draw mode (drag like workspace) instead of instant spawn.
     if (isDrawWallType(type)) {
       const togglingOff =
         building.drawMode === "wall" && building.drawWallType === type;
       onChange({
         ...building,
+        editMode: true,
         drawMode: togglingOff ? "none" : "wall",
         drawWallType: type,
         selectedObjectId: null,
@@ -380,6 +372,7 @@ export function RoomToolsPanel({
     const object = createPlacedObject(type, active.objects.length);
     onChange({
       ...building,
+      editMode: true,
       drawMode: "none",
       floors: building.floors.map((floor) =>
         floor.id === active.id
@@ -411,695 +404,664 @@ export function RoomToolsPanel({
 
   if (!open) return null;
 
+  const subtitle =
+    building.drawMode === "wall"
+      ? `رسم دیوار · ${getObjectLabel(building.drawWallType)}`
+      : selected
+        ? `انتخاب: ${getObjectLabel(selected.type)}`
+        : active.label;
+
   return (
-    <aside
-      dir="rtl"
-      className="pointer-events-auto absolute bottom-4 left-4 z-20 flex max-h-[min(86vh,780px)] w-[min(100%-2rem,340px)] flex-col overflow-hidden rounded-lg border border-amber-800/30 bg-[#120e08]/95 font-mono shadow-xl backdrop-blur-sm"
-    >
-      <div className="flex items-center justify-between border-b border-amber-900/20 px-3 py-2.5">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-amber-300/80">
-            Tools
-          </div>
-          <div className="mt-0.5 text-[9px] uppercase tracking-[0.16em] text-amber-500/55">
-            Floors · Workspaces · Objects
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onReset}
-            className="rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
-          >
-            Reset
-          </button>
+    <PanelShell
+      title="ابزارها"
+      subtitle={subtitle}
+      className="absolute bottom-4 left-4 z-20 max-h-[min(86vh,820px)] w-[min(100%-2rem,360px)]"
+      actions={
+        <>
+          <GhostButton onClick={onReset} title="بازنشانی ساختمان">
+            ریست
+          </GhostButton>
           {onClose ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
-              title="بستن پنل"
-            >
+            <GhostButton onClick={onClose} title="بستن پنل">
               بستن
-            </button>
+            </GhostButton>
           ) : null}
-        </div>
-      </div>
+        </>
+      }
+      bodyClassName="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3"
+      footer={
+        building.editMode
+          ? "ویرایش فعال است · برای جابه‌جایی کلیک کنید و بکشید (نه لمس تصادفی)."
+          : "حالت مشاهده · از نوار بالا «ویرایش» را روشن کنید."
+      }
+    >
+      <SegmentedControl value={tab} options={TOOLS_TABS} onChange={setTab} />
 
-      <div className="space-y-4 overflow-y-auto p-3">
-        <section className="space-y-2">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
-            طبقات ساختمان
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {building.floors.map((floor, index) => (
-              <button
-                key={floor.id}
-                type="button"
-                onClick={() =>
-                  patchBuilding({
-                    activeFloorId: floor.id,
-                    selectedObjectId: null,
-                    selectedWorkspaceId: null,
-                  })
-                }
-                className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition ${
-                  floor.id === active.id
-                    ? "border border-amber-500/50 bg-amber-500/30 text-amber-300"
-                    : "border border-amber-900/25 bg-[#1c1610] text-amber-200/70 hover:border-amber-500/40 hover:bg-[#261e16]"
-                }`}
-              >
-                {index}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={addFloor}
-              disabled={building.floors.length >= MAX_FLOORS}
-              className="flex-1 rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300 disabled:opacity-40"
-            >
-              + طبقه جدید
-            </button>
-            <button
-              type="button"
-              onClick={duplicateActiveFloor}
-              disabled={building.floors.length >= MAX_FLOORS}
-              className="flex-1 rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300 disabled:opacity-40"
-            >
-              کپی طبقه
-            </button>
-            <button
-              type="button"
-              onClick={removeActiveFloor}
-              disabled={building.floors.length <= 1}
-              className="rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300 disabled:opacity-40"
-            >
-              حذف
-            </button>
-          </div>
-          <input
-            type="text"
-            value={active.label}
-            onChange={(event) => patchActiveFloor("label", event.target.value)}
-            className="w-full rounded border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/50"
-            placeholder="نام طبقه"
-          />
-          <NumberField
-            label="فاصلهٔ عمودی طبقات"
-            hint="واحد"
-            value={building.floorSpacing}
-            min={ROOM_LIMITS.floorSpacing.min}
-            max={ROOM_LIMITS.floorSpacing.max}
-            step={ROOM_LIMITS.floorSpacing.step}
-            onChange={(value) => patchBuilding({ floorSpacing: value })}
-          />
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-              نمایش همهٔ طبقات با هم
-            </span>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
+        {tab === "place" ? (
+          <div className="space-y-3">
+            <SectionLabel>کاتالوگ</SectionLabel>
             <input
-              type="checkbox"
-              checked={building.showAllFloors}
-              onChange={(event) =>
-                patchBuilding({ showAllFloors: event.target.checked })
-              }
-              className="h-4 w-4 accent-amber-500"
+              type="search"
+              value={catalogQuery}
+              onChange={(event) => setCatalogQuery(event.target.value)}
+              placeholder="جستجو در ابجکت‌ها…"
+              className="w-full rounded-lg border border-amber-900/25 bg-[#0e0b07]/80 px-2.5 py-2 text-[12px] text-amber-100 outline-none placeholder:text-amber-500/40 focus:border-amber-500/45"
             />
-          </label>
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-              Snap به گرید
-            </span>
-            <input
-              type="checkbox"
-              checked={building.snapToGrid}
-              onChange={(event) =>
-                patchBuilding({ snapToGrid: event.target.checked })
-              }
-              className="h-4 w-4 accent-amber-500"
-            />
-          </label>
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-              Snap به دیوار
-            </span>
-            <input
-              type="checkbox"
-              checked={building.snapToWall}
-              onChange={(event) =>
-                patchBuilding({ snapToWall: event.target.checked })
-              }
-              className="h-4 w-4 accent-amber-500"
-            />
-          </label>
-          <div className="space-y-1.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">نور</div>
-            <div className="grid grid-cols-3 gap-1">
-              {(
-                [
-                  ["day", "روز"],
-                  ["evening", "عصر"],
-                  ["night", "شب"],
-                ] as const
-              ).map(([mode, label]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => patchBuilding({ lightingMode: mode })}
-                  className={`rounded-md border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition ${
-                    building.lightingMode === mode
-                      ? "border-amber-500/50 bg-amber-500/30 text-amber-300"
-                      : "border-amber-900/25 bg-[#1c1610] text-amber-200/70 hover:border-amber-500/40 hover:bg-[#261e16]"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-              لامپ‌ها روشن
-            </span>
-            <input
-              type="checkbox"
-              checked={building.lampsOn}
-              onChange={(event) =>
-                patchBuilding({ lampsOn: event.target.checked })
-              }
-              className="h-4 w-4 accent-amber-500"
-            />
-          </label>
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-              قطع صدا
-            </span>
-            <input
-              type="checkbox"
-              checked={building.muteSfx}
-              onChange={(event) =>
-                patchBuilding({ muteSfx: event.target.checked })
-              }
-              className="h-4 w-4 accent-amber-500"
-            />
-          </label>
-        </section>
-
-        <section className="space-y-2 border-t border-amber-900/15 pt-3">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
-            محیط‌های کاری ({workspaces.length})
-          </div>
-          <p className="text-[10px] leading-5 text-amber-200/55">
-            با دکمهٔ «محیط کاری» روی صحنه رسم کنید. اینجا لیست و حذف است.
-          </p>
-          {workspaces.length === 0 ? (
-            <div className="rounded-md border border-dashed border-amber-900/25 px-2 py-2 text-[10px] text-amber-500/50">
-              هنوز واحدی روی این طبقه نیست.
-            </div>
-          ) : (
-            <ul className="space-y-1.5">
-              {workspaces.map((unit) => {
-                const isSelected = unit.id === building.selectedWorkspaceId;
+            <div className="sticky top-0 z-1 -mx-0.5 flex flex-wrap gap-1 bg-[#120e08]/95 px-0.5 py-1 backdrop-blur-sm">
+              {OBJECT_CATEGORIES.map((category) => {
+                const activeCat = objectCategory === category.id;
                 return (
-                  <li
-                    key={unit.id}
-                    className={`rounded-md border px-2 py-1.5 ${
-                      isSelected
-                        ? "border-amber-500/45 bg-amber-500/15"
-                        : "border-amber-900/25 bg-[#1c1610]"
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => setObjectCategory(category.id)}
+                    className={`rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                      activeCat
+                        ? "bg-amber-500/25 text-amber-200 ring-1 ring-amber-500/35"
+                        : "text-amber-200/55 hover:bg-[#261e16] hover:text-amber-100"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    {category.label}
+                  </button>
+                );
+              })}
+            </div>
+            {building.drawMode === "wall" ? (
+              <div className={`${studioSurfaceClass} px-2.5 py-2 text-[10px] leading-5 text-amber-300/80`}>
+                حالت رسم فعال — روی زمین درگ کنید. دوباره همان دکمه را بزنید تا
+                لغو شود.
+              </div>
+            ) : null}
+            {catalogItems.length === 0 ? (
+              <EmptyHint>موردی پیدا نشد.</EmptyHint>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5">
+                {catalogItems.map((item) => {
+                  const isWallDraw =
+                    isDrawWallType(item.type) &&
+                    building.drawMode === "wall" &&
+                    building.drawWallType === item.type;
+                  return (
+                    <button
+                      key={item.type}
+                      type="button"
+                      onClick={() => addObject(item.type)}
+                      className={`rounded-lg border px-2 py-2.5 text-right text-[11px] transition ${
+                        isWallDraw
+                          ? "border-amber-500/50 bg-amber-500/20 text-amber-200"
+                          : "border-amber-900/20 bg-[#0e0b07]/70 text-amber-200/75 hover:border-amber-500/35 hover:bg-[#261e16] hover:text-amber-100"
+                      }`}
+                    >
+                      <span className="opacity-50">
+                        {isDrawWallType(item.type) ? "✎ " : "+ "}
+                      </span>
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {tab === "edit" ? (
+          <div className="space-y-3">
+            {selected ? (
+              <div className={`${studioSurfaceClass} space-y-3 p-2.5`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-semibold text-amber-100">
+                      {getObjectLabel(selected.type)}
+                    </div>
+                    <div
+                      className="mt-0.5 truncate font-mono text-[10px] text-amber-400/80"
+                      title={selected.id}
+                    >
+                      id: {selected.id}
+                    </div>
+                  </div>
+                  <GhostButton danger onClick={removeSelectedObject}>
+                    حذف
+                  </GhostButton>
+                </div>
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] font-medium text-amber-100">
+                    نوع ابجکت (id ثابت می‌ماند)
+                  </span>
+                  <select
+                    value={selected.type}
+                    onChange={(event) =>
+                      changeSelectedType(event.target.value as ObjectType)
+                    }
+                    className="w-full rounded-lg border border-amber-900/25 bg-[#0e0b07]/80 px-2.5 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/45"
+                  >
+                    {OBJECT_CATALOG.map((item) => (
+                      <option key={item.type} value={item.type}>
+                        {item.label} ({item.type})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] font-medium text-amber-100">
+                    تعویض جای با ابجکت دیگر
+                  </span>
+                  <select
+                    defaultValue=""
+                    onChange={(event) => {
+                      const otherId = event.target.value;
+                      if (!otherId) return;
+                      swapSelectedWith(otherId);
+                      event.target.value = "";
+                    }}
+                    className="w-full rounded-lg border border-amber-900/25 bg-[#0e0b07]/80 px-2.5 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/45"
+                  >
+                    <option value="">انتخاب برای تعویض موقعیت…</option>
+                    {active.objects
+                      .filter((object) => object.id !== selected.id)
+                      .map((object) => (
+                        <option key={object.id} value={object.id}>
+                          {getObjectLabel(object.type)} ·{" "}
+                          {formatObjectIdShort(object.id, 22)}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="text-[10px] leading-4 text-amber-500/50">
+                    فقط مختصات عوض می‌شود؛ id هر ابجکت سر جایش می‌ماند (مثلاً میز
+                    مدیر و میز فرانت جدا می‌مانند).
+                  </p>
+                </label>
+                <SliderField
+                  label="ارتفاع"
+                  hint="Y"
+                  value={selected.elevation}
+                  min={OBJECT_LIMITS.elevation.min}
+                  max={OBJECT_LIMITS.elevation.max}
+                  step={OBJECT_LIMITS.elevation.step}
+                  onEditStart={onBeforeObjectEdit}
+                  onChange={(value) => updateSelectedObject("elevation", value)}
+                />
+                <GhostButton
+                  className="w-full"
+                  onClick={() => {
+                    onBeforeObjectEdit?.();
+                    snapSelectedToSurface();
+                  }}
+                >
+                  چسباندن روی سطح زیرین
+                </GhostButton>
+                {isWallType(selected.type) ? (
+                  <SliderField
+                    label="طول دیوار / در"
+                    value={selected.length}
+                    min={OBJECT_LIMITS.length.min}
+                    max={OBJECT_LIMITS.length.max}
+                    step={OBJECT_LIMITS.length.step}
+                    onEditStart={onBeforeObjectEdit}
+                    onChange={(value) => updateSelectedObject("length", value)}
+                  />
+                ) : null}
+                <SliderField
+                  label="موقعیت X"
+                  value={selected.x}
+                  min={OBJECT_LIMITS.x.min}
+                  max={OBJECT_LIMITS.x.max}
+                  step={OBJECT_LIMITS.x.step}
+                  onEditStart={onBeforeObjectEdit}
+                  onChange={(value) => updateSelectedObject("x", value)}
+                />
+                <SliderField
+                  label="موقعیت Z"
+                  value={selected.z}
+                  min={OBJECT_LIMITS.z.min}
+                  max={OBJECT_LIMITS.z.max}
+                  step={OBJECT_LIMITS.z.step}
+                  onEditStart={onBeforeObjectEdit}
+                  onChange={(value) => updateSelectedObject("z", value)}
+                />
+                <SliderField
+                  label="چرخش"
+                  hint="°"
+                  value={selected.rotationY}
+                  min={OBJECT_LIMITS.rotationY.min}
+                  max={OBJECT_LIMITS.rotationY.max}
+                  step={OBJECT_LIMITS.rotationY.step}
+                  onEditStart={onBeforeObjectEdit}
+                  onChange={(value) => updateSelectedObject("rotationY", value)}
+                />
+                <SliderField
+                  label="مقیاس"
+                  value={selected.scale}
+                  min={OBJECT_LIMITS.scale.min}
+                  max={OBJECT_LIMITS.scale.max}
+                  step={OBJECT_LIMITS.scale.step}
+                  onEditStart={onBeforeObjectEdit}
+                  onChange={(value) => updateSelectedObject("scale", value)}
+                />
+              </div>
+            ) : (
+              <EmptyHint>
+                ابجکتی انتخاب نشده. از صحنه یا لیست زیر یکی را برگزینید.
+              </EmptyHint>
+            )}
+
+            <SectionLabel>ابجکت‌های طبقه</SectionLabel>
+            {active.objects.length === 0 ? (
+              <EmptyHint>هنوز ابجکتی نیست — از تب جایگذاری اضافه کنید.</EmptyHint>
+            ) : (
+              <div className="max-h-40 space-y-1 overflow-y-auto">
+                {active.objects.map((object) => (
+                  <button
+                    key={object.id}
+                    type="button"
+                    onClick={() =>
+                      patchBuilding({
+                        selectedObjectId: object.id,
+                        selectedWorkspaceId: null,
+                      })
+                    }
+                    className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[11px] transition ${
+                      object.id === building.selectedObjectId
+                        ? "border border-amber-500/40 bg-amber-500/15 text-amber-200"
+                        : "border border-transparent text-amber-200/70 hover:bg-[#261e16]"
+                    }`}
+                  >
+                    <span className="min-w-0 truncate text-right">
+                      <span className="block truncate">
+                        {getObjectLabel(object.type)}
+                      </span>
+                      <span className="mt-0.5 block truncate font-mono text-[9px] opacity-55">
+                        {formatObjectIdShort(object.id)}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] opacity-45">
+                      {object.x.toFixed(1)}, {object.z.toFixed(1)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {tab === "space" ? (
+          <div className="space-y-4">
+            <section className="space-y-2">
+              <SectionLabel>محیط‌های کاری ({workspaces.length})</SectionLabel>
+              <p className="text-[10px] leading-5 text-amber-200/50">
+                با دکمهٔ «محیط کاری» روی صحنه رسم کنید.
+              </p>
+              {workspaces.length === 0 ? (
+                <EmptyHint>هنوز واحدی روی این طبقه نیست.</EmptyHint>
+              ) : (
+                <ul className="space-y-1.5">
+                  {workspaces.map((unit) => {
+                    const isSelected = unit.id === building.selectedWorkspaceId;
+                    return (
+                      <li
+                        key={unit.id}
+                        className={`rounded-lg border px-2.5 py-2 ${
+                          isSelected
+                            ? "border-amber-500/40 bg-amber-500/12"
+                            : "border-amber-900/25 bg-[#0e0b07]/60"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              patchBuilding({
+                                selectedWorkspaceId: unit.id,
+                                selectedObjectId: null,
+                              })
+                            }
+                            className="min-w-0 flex-1 text-right text-[11px] text-amber-100 hover:text-amber-200"
+                          >
+                            <div className="truncate font-semibold">
+                              {unit.label}
+                            </div>
+                            <div className="mt-0.5 font-mono text-[9px] text-amber-500/55">
+                              {unit.width.toFixed(1)}×{unit.depth.toFixed(1)} ·{" "}
+                              {unit.shape === "square" ? "مربع" : "مستطیل"}
+                              {unit.withWalls ? " · دیوار" : ""}
+                            </div>
+                          </button>
+                          <GhostButton
+                            danger
+                            onClick={() => removeWorkspace(unit.id)}
+                          >
+                            حذف
+                          </GhostButton>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {selectedWorkspace ? (
+                <div className={`${studioSurfaceClass} space-y-2 p-2.5`}>
+                  <input
+                    type="text"
+                    value={selectedWorkspace.label}
+                    onChange={(event) =>
+                      patchWorkspace(
+                        selectedWorkspace.id,
+                        "label",
+                        event.target.value,
+                      )
+                    }
+                    className="w-full rounded-lg border border-amber-900/25 bg-[#0e0b07]/80 px-2.5 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/45"
+                    placeholder="برچسب واحد"
+                  />
+                  <ColorField
+                    label="رنگ کف"
+                    value={selectedWorkspace.floorColor}
+                    onChange={(value) =>
+                      patchWorkspace(selectedWorkspace.id, "floorColor", value)
+                    }
+                  />
+                  <ColorField
+                    label="رنگ دیوار"
+                    value={selectedWorkspace.wallColor}
+                    onChange={(value) =>
+                      patchWorkspace(selectedWorkspace.id, "wallColor", value)
+                    }
+                  />
+                  <ToggleRow
+                    label="با دیوار"
+                    checked={selectedWorkspace.withWalls}
+                    onChange={(checked) =>
+                      patchWorkspace(selectedWorkspace.id, "withWalls", checked)
+                    }
+                  />
+                </div>
+              ) : null}
+            </section>
+
+            <section className="space-y-2">
+              <SectionLabel>فضاهای آماده</SectionLabel>
+              <p className="text-[10px] leading-5 text-amber-500/50">
+                {selectedWorkspace
+                  ? `اعمال روی «${selectedWorkspace.label}»`
+                  : "بدون انتخاب واحد: روی کل طبقه اعمال می‌شود."}
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {ROOM_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    title={preset.description}
+                    onClick={() => applyPreset(preset.id)}
+                    className="rounded-lg border border-amber-900/20 bg-[#0e0b07]/70 px-2 py-2.5 text-right text-[11px] text-amber-200/75 transition hover:border-amber-500/35 hover:bg-[#261e16] hover:text-amber-100"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <SectionLabel
+                action={
+                  <GhostButton onClick={addAgent}>+ کاراکتر</GhostButton>
+                }
+              >
+                کاراکترها
+              </SectionLabel>
+              {(active.agents ?? []).length === 0 ? (
+                <EmptyHint>هنوز کاراکتری نیست.</EmptyHint>
+              ) : (
+                <div className="max-h-36 space-y-1 overflow-y-auto">
+                  {(active.agents ?? []).map((agent) => (
+                    <div
+                      key={agent.id}
+                      className="flex items-center gap-2 rounded-lg border border-amber-900/15 px-2.5 py-1.5 text-[11px]"
+                    >
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: agent.color }}
+                      />
+                      <span className="flex-1 truncate text-amber-100">
+                        {agent.name}
+                      </span>
                       <button
                         type="button"
-                        onClick={() =>
-                          patchBuilding({
-                            selectedWorkspaceId: unit.id,
-                            selectedObjectId: null,
-                          })
-                        }
-                        className="min-w-0 flex-1 text-right text-[11px] text-amber-100 hover:text-amber-300"
+                        onClick={() => toggleAgentRoam(agent.id)}
+                        className="text-[10px] text-amber-300/85"
                       >
-                        <div className="truncate font-semibold">
-                          {unit.label}
-                        </div>
-                        <div className="mt-0.5 font-mono text-[9px] text-amber-500/60">
-                          {unit.width.toFixed(1)}×{unit.depth.toFixed(1)} ·{" "}
-                          {unit.shape === "square" ? "مربع" : "مستطیل"}
-                          {unit.withWalls ? " · دیوار" : ""}
-                        </div>
+                        {agent.roam ? "گشت" : "ثابت"}
                       </button>
                       <button
                         type="button"
-                        onClick={() => removeWorkspace(unit.id)}
-                        className="shrink-0 rounded border border-amber-900/25 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-200/70 hover:border-red-500/40 hover:text-red-300"
+                        onClick={() => removeAgent(agent.id)}
+                        className="text-[10px] text-[#ef9a9a]"
                       >
                         حذف
                       </button>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {selectedWorkspace ? (
-            <div className="space-y-2 rounded-md border border-amber-900/20 bg-[#1c1610]/60 p-2">
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        ) : null}
+
+        {tab === "build" ? (
+          <div className="space-y-4">
+            <section className="space-y-2">
+              <SectionLabel>طبقات</SectionLabel>
+              <div className="flex flex-wrap gap-1.5">
+                {building.floors.map((floor, index) => (
+                  <button
+                    key={floor.id}
+                    type="button"
+                    onClick={() =>
+                      patchBuilding({
+                        activeFloorId: floor.id,
+                        selectedObjectId: null,
+                        selectedWorkspaceId: null,
+                      })
+                    }
+                    className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                      floor.id === active.id
+                        ? "border border-amber-500/45 bg-amber-500/25 text-amber-200"
+                        : "border border-amber-900/25 bg-[#1c1610] text-amber-200/65 hover:border-amber-500/35"
+                    }`}
+                  >
+                    {index}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1.5">
+                <GhostButton
+                  className="flex-1"
+                  onClick={addFloor}
+                  disabled={building.floors.length >= MAX_FLOORS}
+                >
+                  + طبقه
+                </GhostButton>
+                <GhostButton
+                  className="flex-1"
+                  onClick={duplicateActiveFloor}
+                  disabled={building.floors.length >= MAX_FLOORS}
+                >
+                  کپی
+                </GhostButton>
+                <GhostButton
+                  danger
+                  onClick={removeActiveFloor}
+                  disabled={building.floors.length <= 1}
+                >
+                  حذف
+                </GhostButton>
+              </div>
               <input
                 type="text"
-                value={selectedWorkspace.label}
+                value={active.label}
                 onChange={(event) =>
-                  patchWorkspace(
-                    selectedWorkspace.id,
-                    "label",
-                    event.target.value,
-                  )
+                  patchActiveFloor("label", event.target.value)
                 }
-                className="w-full rounded border border-amber-900/25 bg-[#120e08] px-2 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/50"
-                placeholder="برچسب واحد"
+                className="w-full rounded-lg border border-amber-900/25 bg-[#0e0b07]/80 px-2.5 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/45"
+                placeholder="نام طبقه"
               />
+              <SliderField
+                label="فاصلهٔ عمودی طبقات"
+                value={building.floorSpacing}
+                min={ROOM_LIMITS.floorSpacing.min}
+                max={ROOM_LIMITS.floorSpacing.max}
+                step={ROOM_LIMITS.floorSpacing.step}
+                onChange={(value) => patchBuilding({ floorSpacing: value })}
+              />
+              <ToggleRow
+                label="نمایش همهٔ طبقات"
+                checked={building.showAllFloors}
+                onChange={(checked) =>
+                  patchBuilding({ showAllFloors: checked })
+                }
+              />
+              <ToggleRow
+                label="Snap به گرید"
+                checked={building.snapToGrid}
+                onChange={(checked) => patchBuilding({ snapToGrid: checked })}
+              />
+              <ToggleRow
+                label="Snap به دیوار"
+                checked={building.snapToWall}
+                onChange={(checked) => patchBuilding({ snapToWall: checked })}
+              />
+            </section>
+
+            <section className="space-y-2">
+              <SectionLabel>نور و صدا</SectionLabel>
+              <SegmentedControl
+                size="sm"
+                value={building.lightingMode}
+                onChange={(mode) => patchBuilding({ lightingMode: mode })}
+                options={[
+                  { value: "day", label: "روز" },
+                  { value: "evening", label: "عصر" },
+                  { value: "night", label: "شب" },
+                ]}
+              />
+              <ToggleRow
+                label="لامپ‌ها روشن"
+                checked={building.lampsOn}
+                onChange={(checked) => patchBuilding({ lampsOn: checked })}
+              />
+              <ToggleRow
+                label="قطع صدا"
+                checked={building.muteSfx}
+                onChange={(checked) => patchBuilding({ muteSfx: checked })}
+              />
+            </section>
+
+            <section className="space-y-2">
+              <SectionLabel>اتصال طبقات</SectionLabel>
+              <ToggleRow
+                label="راه‌پله"
+                checked={building.structure.showStairs}
+                onChange={(checked) => patchStructure("showStairs", checked)}
+              />
+              <ToggleRow
+                label="ستون‌های گوشه"
+                checked={building.structure.showColumns}
+                onChange={(checked) => patchStructure("showColumns", checked)}
+              />
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-medium text-amber-100">
+                  گوشهٔ راه‌پله
+                </span>
+                <select
+                  value={building.structure.stairsCorner}
+                  onChange={(event) =>
+                    patchStructure(
+                      "stairsCorner",
+                      event.target.value as StructureConfig["stairsCorner"],
+                    )
+                  }
+                  className="w-full rounded-lg border border-amber-900/25 bg-[#0e0b07]/80 px-2.5 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/45"
+                >
+                  <option value="se">جنوب‌شرقی</option>
+                  <option value="sw">جنوب‌غربی</option>
+                  <option value="ne">شمال‌شرقی</option>
+                  <option value="nw">شمال‌غربی</option>
+                </select>
+              </label>
+              <SliderField
+                label="شعاع ستون"
+                value={building.structure.columnRadius}
+                min={ROOM_LIMITS.columnRadius.min}
+                max={ROOM_LIMITS.columnRadius.max}
+                step={ROOM_LIMITS.columnRadius.step}
+                onChange={(value) => patchStructure("columnRadius", value)}
+              />
+              {building.floors.length < 2 ? (
+                <p className="text-[10px] leading-5 text-amber-500/50">
+                  برای دیدن راه‌پله، حداقل یک طبقهٔ دیگر اضافه کنید.
+                </p>
+              ) : null}
+            </section>
+
+            <section className="space-y-2">
+              <SectionLabel>اندازهٔ طبقه</SectionLabel>
+              <SliderField
+                label="طول (X)"
+                value={active.width}
+                min={ROOM_LIMITS.width.min}
+                max={ROOM_LIMITS.width.max}
+                step={ROOM_LIMITS.width.step}
+                onChange={(value) => patchActiveFloor("width", value)}
+              />
+              <SliderField
+                label="عرض (Z)"
+                value={active.depth}
+                min={ROOM_LIMITS.depth.min}
+                max={ROOM_LIMITS.depth.max}
+                step={ROOM_LIMITS.depth.step}
+                onChange={(value) => patchActiveFloor("depth", value)}
+              />
+              <SliderField
+                label="ارتفاع دیوار"
+                value={active.wallHeight}
+                min={ROOM_LIMITS.wallHeight.min}
+                max={ROOM_LIMITS.wallHeight.max}
+                step={ROOM_LIMITS.wallHeight.step}
+                onChange={(value) => patchActiveFloor("wallHeight", value)}
+              />
+              <SliderField
+                label="ضخامت دیوار"
+                value={active.wallThickness}
+                min={ROOM_LIMITS.wallThickness.min}
+                max={ROOM_LIMITS.wallThickness.max}
+                step={ROOM_LIMITS.wallThickness.step}
+                onChange={(value) => patchActiveFloor("wallThickness", value)}
+              />
+            </section>
+
+            <section className="space-y-2">
+              <SectionLabel>ظاهر طبقه</SectionLabel>
               <ColorField
                 label="رنگ کف"
-                value={selectedWorkspace.floorColor}
-                onChange={(value) =>
-                  patchWorkspace(selectedWorkspace.id, "floorColor", value)
-                }
+                value={active.floorColor}
+                onChange={(value) => patchActiveFloor("floorColor", value)}
               />
               <ColorField
                 label="رنگ دیوار"
-                value={selectedWorkspace.wallColor}
-                onChange={(value) =>
-                  patchWorkspace(selectedWorkspace.id, "wallColor", value)
+                value={active.wallColor}
+                onChange={(value) => patchActiveFloor("wallColor", value)}
+              />
+              <ToggleRow
+                label="خطوط دانهٔ چوب"
+                checked={active.showFloorGrain}
+                onChange={(checked) =>
+                  patchActiveFloor("showFloorGrain", checked)
                 }
               />
-              <label className="flex cursor-pointer items-center justify-between gap-3">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-                  با دیوار
-                </span>
-                <input
-                  type="checkbox"
-                  checked={selectedWorkspace.withWalls}
-                  onChange={(event) =>
-                    patchWorkspace(
-                      selectedWorkspace.id,
-                      "withWalls",
-                      event.target.checked,
-                    )
-                  }
-                  className="h-4 w-4 accent-amber-500"
-                />
-              </label>
-            </div>
-          ) : null}
-        </section>
-
-        <section className="space-y-2 border-t border-amber-900/15 pt-3">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
-            فضاهای آماده
+            </section>
           </div>
-          <p className="text-[10px] leading-5 text-amber-500/55">
-            {selectedWorkspace
-              ? `واحد «${selectedWorkspace.label}» انتخاب شده — preset به ابعاد ${selectedWorkspace.width.toFixed(1)}×${selectedWorkspace.depth.toFixed(1)} همان واحد مقیاس می‌شود.`
-              : "بدون انتخاب واحد: روی کل طبقه اعمال می‌شود و ابجکت‌ها را جایگزین می‌کند. یک محیط کاری را انتخاب کنید تا فقط داخل آن پر شود."}
-          </p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {ROOM_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                title={preset.description}
-                onClick={() => applyPreset(preset.id)}
-                className="rounded-md border border-amber-900/20 bg-[#120e08] px-2 py-2 text-right text-[10px] text-amber-200/70 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="space-y-2 border-t border-amber-900/15 pt-3">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
-            کاراکترها (حرکت و تعامل)
-          </div>
-          <button
-            type="button"
-            onClick={addAgent}
-            className="w-full rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200/85 transition hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
-          >
-            + کاراکتر جدید
-          </button>
-          {(active.agents ?? []).length === 0 ? (
-            <p className="text-[10px] text-amber-500/55">
-              هنوز کاراکتری نیست — یا از فضاهای آماده استفاده کنید.
-            </p>
-          ) : (
-            <div className="max-h-28 space-y-1 overflow-y-auto">
-              {(active.agents ?? []).map((agent) => (
-                <div
-                  key={agent.id}
-                  className="flex items-center gap-2 rounded border border-amber-900/15 px-2 py-1 text-[10px]"
-                >
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: agent.color }}
-                  />
-                  <span className="flex-1 text-amber-100">{agent.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => toggleAgentRoam(agent.id)}
-                    className="text-amber-300/85"
-                  >
-                    {agent.roam ? "گشت" : "ثابت"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeAgent(agent.id)}
-                    className="text-[#ef9a9a]"
-                  >
-                    حذف
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-3 border-t border-amber-900/15 pt-3">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
-            اتصال طبقات (راه‌پله و ستون)
-          </div>
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">راه‌پله</span>
-            <input
-              type="checkbox"
-              checked={building.structure.showStairs}
-              onChange={(event) =>
-                patchStructure("showStairs", event.target.checked)
-              }
-              className="h-4 w-4 accent-amber-500"
-            />
-          </label>
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-              ستون‌های گوشه
-            </span>
-            <input
-              type="checkbox"
-              checked={building.structure.showColumns}
-              onChange={(event) =>
-                patchStructure("showColumns", event.target.checked)
-              }
-              className="h-4 w-4 accent-amber-500"
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-              گوشهٔ راه‌پله
-            </span>
-            <select
-              value={building.structure.stairsCorner}
-              onChange={(event) =>
-                patchStructure(
-                  "stairsCorner",
-                  event.target.value as StructureConfig["stairsCorner"],
-                )
-              }
-              className="w-full rounded border border-amber-900/25 bg-[#1c1610] px-2 py-1.5 text-xs text-amber-100 outline-none focus:border-amber-500/50"
-            >
-              <option value="se">جنوب‌شرقی</option>
-              <option value="sw">جنوب‌غربی</option>
-              <option value="ne">شمال‌شرقی</option>
-              <option value="nw">شمال‌غربی</option>
-            </select>
-          </label>
-          <NumberField
-            label="شعاع ستون"
-            hint="واحد"
-            value={building.structure.columnRadius}
-            min={ROOM_LIMITS.columnRadius.min}
-            max={ROOM_LIMITS.columnRadius.max}
-            step={ROOM_LIMITS.columnRadius.step}
-            onChange={(value) => patchStructure("columnRadius", value)}
-          />
-          {building.floors.length < 2 ? (
-            <p className="text-[10px] leading-5 text-amber-500/55">
-              برای دیدن راه‌پله و ستون، حداقل یک طبقهٔ دیگر اضافه کنید و «نمایش
-              همهٔ طبقات» را روشن بگذارید.
-            </p>
-          ) : null}
-        </section>
-
-        <section className="space-y-3 border-t border-amber-900/15 pt-3">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
-            ابجکت‌ها ({OBJECT_CATALOG.length} نوع — مثل old-version)
-          </div>
-          <p className="text-[10px] leading-5 text-amber-500/55">
-            روی ابجکت کلیک‌نگه کنید و بکشید. کیبورد/ماوس/مانیتور را روی میز رها
-            کنید تا خودکار روی سطح بنشیند. ارتفاع را از اسلایدر Elevation هم
-            می‌توانید تنظیم کنید.
-          </p>
-          <div className="flex flex-wrap gap-1">
-            {OBJECT_CATEGORIES.map((category) => (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() => setObjectCategory(category.id)}
-                className={`rounded px-2 py-1 text-[10px] transition ${
-                  objectCategory === category.id
-                    ? "border border-amber-500/50 bg-amber-500/30 text-amber-300"
-                    : "border border-amber-900/25 text-amber-200/85 hover:border-amber-500/40"
-                }`}
-              >
-                {category.label}
-              </button>
-            ))}
-          </div>
-          <div className="grid max-h-40 grid-cols-2 gap-1.5 overflow-y-auto pr-0.5">
-            {catalogItems.map((item) => {
-              const isWallDraw =
-                isDrawWallType(item.type) &&
-                building.drawMode === "wall" &&
-                building.drawWallType === item.type;
-              return (
-                <button
-                  key={item.type}
-                  type="button"
-                  onClick={() => addObject(item.type)}
-                  className={`rounded-md border px-1.5 py-2 text-right text-[10px] transition ${
-                    isWallDraw
-                      ? "border-amber-500/50 bg-amber-500/25 text-amber-300"
-                      : "border-amber-900/20 bg-[#120e08] text-amber-200/70 hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-300"
-                  }`}
-                >
-                  {isDrawWallType(item.type) ? "✎ " : "+ "}
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-          {building.drawMode === "wall" ? (
-            <p className="text-[10px] leading-5 text-amber-400/70">
-              حالت رسم دیوار فعال است — روی زمین درگ کنید تا اتاق با «
-              {getObjectLabel(building.drawWallType)}» ساخته شود. دوباره همان
-              دکمه را بزنید تا لغو شود.
-            </p>
-          ) : null}
-
-          {active.objects.length > 0 ? (
-            <div className="max-h-28 space-y-1 overflow-y-auto rounded border border-amber-900/15 bg-[#1c1610]/70 p-1.5">
-              {active.objects.map((object) => (
-                <button
-                  key={object.id}
-                  type="button"
-                  onClick={() =>
-                    patchBuilding({
-                      selectedObjectId: object.id,
-                      selectedWorkspaceId: null,
-                    })
-                  }
-                  className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-[10px] transition ${
-                    object.id === building.selectedObjectId
-                      ? "border border-amber-500/40 bg-amber-500/20 text-amber-300"
-                      : "border border-transparent text-amber-200/70 hover:bg-[#261e16]"
-                  }`}
-                >
-                  <span>{getObjectLabel(object.type)}</span>
-                  <span className="font-mono opacity-60">
-                    {object.x.toFixed(1)}, {object.z.toFixed(1)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[10px] text-amber-500/55">
-              هنوز ابجکتی نیست — از دسته‌ها یکی اضافه کنید.
-            </p>
-          )}
-
-          {selected ? (
-            <div className="space-y-3 rounded border border-amber-500/30 bg-amber-500/5 p-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-amber-300/85">
-                  ویرایش: {getObjectLabel(selected.type)}
-                </span>
-                <button
-                  type="button"
-                  onClick={removeSelectedObject}
-                  className="rounded-md border border-amber-900/25 bg-[#1c1610] px-2 py-0.5 text-[10px] text-amber-200/85 hover:border-red-400 hover:text-red-300"
-                >
-                  حذف
-                </button>
-              </div>
-              <NumberField
-                label="ارتفاع (Elevation / Y)"
-                hint="برای روی میز"
-                value={selected.elevation}
-                min={OBJECT_LIMITS.elevation.min}
-                max={OBJECT_LIMITS.elevation.max}
-                step={OBJECT_LIMITS.elevation.step}
-                onEditStart={onBeforeObjectEdit}
-                onChange={(value) => updateSelectedObject("elevation", value)}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  onBeforeObjectEdit?.();
-                  snapSelectedToSurface();
-                }}
-                className="w-full rounded-md border border-amber-500/40 px-2 py-1.5 text-[10px] text-amber-300/85 transition hover:bg-amber-500/10"
-              >
-                چسباندن روی سطح زیرین (میز و …)
-              </button>
-              {isWallType(selected.type) ? (
-                <NumberField
-                  label="طول دیوار / در"
-                  hint="واحد"
-                  value={selected.length}
-                  min={OBJECT_LIMITS.length.min}
-                  max={OBJECT_LIMITS.length.max}
-                  step={OBJECT_LIMITS.length.step}
-                  onEditStart={onBeforeObjectEdit}
-                  onChange={(value) => updateSelectedObject("length", value)}
-                />
-              ) : null}
-              <NumberField
-                label="موقعیت X"
-                value={selected.x}
-                min={OBJECT_LIMITS.x.min}
-                max={OBJECT_LIMITS.x.max}
-                step={OBJECT_LIMITS.x.step}
-                onEditStart={onBeforeObjectEdit}
-                onChange={(value) => updateSelectedObject("x", value)}
-              />
-              <NumberField
-                label="موقعیت Z"
-                value={selected.z}
-                min={OBJECT_LIMITS.z.min}
-                max={OBJECT_LIMITS.z.max}
-                step={OBJECT_LIMITS.z.step}
-                onEditStart={onBeforeObjectEdit}
-                onChange={(value) => updateSelectedObject("z", value)}
-              />
-              <NumberField
-                label="چرخش Y"
-                hint="درجه"
-                value={selected.rotationY}
-                min={OBJECT_LIMITS.rotationY.min}
-                max={OBJECT_LIMITS.rotationY.max}
-                step={OBJECT_LIMITS.rotationY.step}
-                onEditStart={onBeforeObjectEdit}
-                onChange={(value) => updateSelectedObject("rotationY", value)}
-              />
-              <NumberField
-                label="مقیاس"
-                value={selected.scale}
-                min={OBJECT_LIMITS.scale.min}
-                max={OBJECT_LIMITS.scale.max}
-                step={OBJECT_LIMITS.scale.step}
-                onEditStart={onBeforeObjectEdit}
-                onChange={(value) => updateSelectedObject("scale", value)}
-              />
-            </div>
-          ) : null}
-        </section>
-
-        <section className="space-y-3 border-t border-amber-900/15 pt-3">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
-            اندازهٔ طبقهٔ فعال
-          </div>
-          <NumberField
-            label="طول (Width / X)"
-            hint="واحد"
-            value={active.width}
-            min={ROOM_LIMITS.width.min}
-            max={ROOM_LIMITS.width.max}
-            step={ROOM_LIMITS.width.step}
-            onChange={(value) => patchActiveFloor("width", value)}
-          />
-          <NumberField
-            label="عرض (Depth / Z)"
-            hint="واحد"
-            value={active.depth}
-            min={ROOM_LIMITS.depth.min}
-            max={ROOM_LIMITS.depth.max}
-            step={ROOM_LIMITS.depth.step}
-            onChange={(value) => patchActiveFloor("depth", value)}
-          />
-          <NumberField
-            label="ارتفاع دیوار (Height / Y)"
-            hint="واحد"
-            value={active.wallHeight}
-            min={ROOM_LIMITS.wallHeight.min}
-            max={ROOM_LIMITS.wallHeight.max}
-            step={ROOM_LIMITS.wallHeight.step}
-            onChange={(value) => patchActiveFloor("wallHeight", value)}
-          />
-          <NumberField
-            label="ضخامت دیوار"
-            hint="واحد"
-            value={active.wallThickness}
-            min={ROOM_LIMITS.wallThickness.min}
-            max={ROOM_LIMITS.wallThickness.max}
-            step={ROOM_LIMITS.wallThickness.step}
-            onChange={(value) => patchActiveFloor("wallThickness", value)}
-          />
-        </section>
-
-        <section className="space-y-3 border-t border-amber-900/15 pt-3">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500/65">
-            ظاهر طبقهٔ فعال
-          </div>
-          <ColorField
-            label="رنگ کف"
-            value={active.floorColor}
-            onChange={(value) => patchActiveFloor("floorColor", value)}
-          />
-          <ColorField
-            label="رنگ دیوار"
-            value={active.wallColor}
-            onChange={(value) => patchActiveFloor("wallColor", value)}
-          />
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-100">
-              خطوط دانهٔ چوب روی کف
-            </span>
-            <input
-              type="checkbox"
-              checked={active.showFloorGrain}
-              onChange={(event) =>
-                patchActiveFloor("showFloorGrain", event.target.checked)
-              }
-              className="h-4 w-4 accent-amber-500"
-            />
-          </label>
-        </section>
-
-        <section className="rounded border border-amber-900/15 bg-[#1c1610]/80 p-2 text-[10px] leading-5 text-amber-500/55">
-          پورت <span className="text-amber-300/85">3001</span> · بدون Gateway ·
-          ابجکت را از لیست یا با کلیک روی صحنه انتخاب کنید.
-        </section>
+        ) : null}
       </div>
-    </aside>
+    </PanelShell>
   );
 }

@@ -70,6 +70,7 @@ export type ObjectCategory =
   | "structure";
 
 export type PlacedObject = {
+  /** Stable instance id — survives moves/swaps; never reuse across objects. */
   id: string;
   type: ObjectType;
   x: number;
@@ -316,6 +317,90 @@ export function snapOntoNearbySurface(
   return { ...moving, elevation: best.elevation };
 }
 
+let objectIdCounter = 0;
+
+function randomIdSuffix(length = 8): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID().replace(/-/g, "").slice(0, length);
+  }
+  return Math.random().toString(36).slice(2, 2 + length);
+}
+
+/**
+ * Create a unique object instance id.
+ * Format: obj-{type}-{slug} — type helps grep; slug keeps instances distinct.
+ */
+export function createObjectId(type: ObjectType, slug?: string): string {
+  objectIdCounter += 1;
+  const cleanSlug = slug
+    ? slug
+        .replace(/^(tpl|obj)-/i, "")
+        .replace(/[^a-zA-Z0-9_-]/g, "-")
+        .replace(/-+/g, "-")
+        .slice(0, 32)
+    : `${objectIdCounter.toString(36)}-${randomIdSuffix(6)}`;
+  return `obj-${type}-${cleanSlug}`;
+}
+
+/** Short id for lists (full id stays in data + localStorage). */
+export function formatObjectIdShort(id: string, max = 26): string {
+  if (id.length <= max) return id;
+  return `${id.slice(0, max - 7)}…${id.slice(-5)}`;
+}
+
+/** Guarantee every object on a floor has a distinct id. */
+export function ensureUniqueObjectIds(objects: PlacedObject[]): PlacedObject[] {
+  const seen = new Set<string>();
+  return objects.map((object) => {
+    let id =
+      typeof object.id === "string" && object.id.trim().length > 0
+        ? object.id.trim()
+        : createObjectId(object.type);
+    if (seen.has(id)) {
+      id = createObjectId(object.type);
+    }
+    while (seen.has(id)) {
+      id = createObjectId(object.type);
+    }
+    seen.add(id);
+    return id === object.id ? object : { ...object, id };
+  });
+}
+
+/**
+ * Swap placement of two objects — ids (identity) stay put, only pose changes.
+ */
+export function swapPlacedObjectTransforms(
+  objects: PlacedObject[],
+  idA: string,
+  idB: string,
+): PlacedObject[] {
+  const a = objects.find((object) => object.id === idA);
+  const b = objects.find((object) => object.id === idB);
+  if (!a || !b || a.id === b.id) return objects;
+  return objects.map((object) => {
+    if (object.id === idA) {
+      return {
+        ...object,
+        x: b.x,
+        z: b.z,
+        elevation: b.elevation,
+        rotationY: b.rotationY,
+      };
+    }
+    if (object.id === idB) {
+      return {
+        ...object,
+        x: a.x,
+        z: a.z,
+        elevation: a.elevation,
+        rotationY: a.rotationY,
+      };
+    }
+    return object;
+  });
+}
+
 export function createPlacedObject(
   type: ObjectType,
   index: number,
@@ -324,8 +409,9 @@ export function createPlacedObject(
   const catalog = getCatalogItem(type);
   const offset = (index % 5) * 1.4;
   const defaultLength = catalog.footprint[0] * SCALE;
+  const { id: idOverride, type: _typeOverride, ...rest } = overrides;
   return {
-    id: `obj-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+    id: idOverride ?? createObjectId(type),
     type,
     x: -4 + offset,
     z: -2 + (index % 3) * 1.2,
@@ -333,15 +419,36 @@ export function createPlacedObject(
     rotationY: 0,
     scale: catalog.defaultScale,
     length: defaultLength,
-    ...overrides,
+    ...rest,
   };
 }
 
 export function clonePlacedObjects(objects: PlacedObject[]): PlacedObject[] {
-  return objects.map((object, index) => ({
+  return ensureUniqueObjectIds(
+    objects.map((object) => ({
+      ...object,
+      id: createObjectId(object.type, `${object.id}-copy`),
+    })),
+  );
+}
+
+/**
+ * Change furniture type but keep the same instance id (identity).
+ * Useful when swapping “manager desk” visual for another type later.
+ */
+export function changePlacedObjectType(
+  object: PlacedObject,
+  nextType: ObjectType,
+): PlacedObject {
+  if (object.type === nextType) return object;
+  const catalog = getCatalogItem(nextType);
+  const defaultLength = catalog.footprint[0] * SCALE;
+  return {
     ...object,
-    id: `obj-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
-  }));
+    type: nextType,
+    scale: catalog.defaultScale,
+    length: isWallType(nextType) ? object.length || defaultLength : defaultLength,
+  };
 }
 
 export function getObjectLabel(type: ObjectType): string {

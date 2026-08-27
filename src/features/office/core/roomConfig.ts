@@ -7,6 +7,7 @@ import {
 import {
   clonePlacedObjects,
   createPlacedObject,
+  ensureUniqueObjectIds,
   resolveObjectType,
   type ObjectType,
   type PlacedObject,
@@ -118,6 +119,8 @@ export type BuildingConfig = {
   lightingMode: LightingMode;
   lampsOn: boolean;
   muteSfx: boolean;
+  /** When false, scene is view-only — no accidental object moves. */
+  editMode: boolean;
   /** On-canvas draw tool mode. */
   drawMode: DrawMode;
   workspaceShape: WorkspaceShape;
@@ -179,6 +182,7 @@ export const DEFAULT_BUILDING: BuildingConfig = {
   lightingMode: "day",
   lampsOn: true,
   muteSfx: false,
+  editMode: false,
   drawMode: "none",
   workspaceShape: "rectangle",
   workspaceWithWalls: true,
@@ -393,14 +397,14 @@ export function getSelectedObject(
 
 function normalizeObjects(raw: unknown): PlacedObject[] {
   if (!Array.isArray(raw)) return [];
-  return raw.map((item, index) => {
+  const mapped = raw.map((item, index) => {
     const object = item as Partial<PlacedObject> & { type?: string };
     const type = resolveObjectType(object.type ?? "desk_cubicle");
     const fallback = createPlacedObject(type, index);
     return {
       ...fallback,
       ...object,
-      id: typeof object.id === "string" ? object.id : fallback.id,
+      id: typeof object.id === "string" ? object.id.trim() : fallback.id,
       type,
       x: typeof object.x === "number" ? object.x : fallback.x,
       z: typeof object.z === "number" ? object.z : fallback.z,
@@ -417,6 +421,7 @@ function normalizeObjects(raw: unknown): PlacedObject[] {
       scale: typeof object.scale === "number" ? object.scale : fallback.scale,
     } satisfies PlacedObject;
   });
+  return ensureUniqueObjectIds(mapped);
 }
 
 function normalizeAgents(raw: unknown): OfficeAgent[] {
@@ -575,6 +580,8 @@ export function normalizeBuilding(raw: unknown): BuildingConfig {
         typeof data.muteSfx === "boolean"
           ? data.muteSfx
           : DEFAULT_BUILDING.muteSfx,
+      editMode:
+        typeof data.editMode === "boolean" ? data.editMode : false,
       drawMode:
         data.drawMode === "workspace" || data.drawMode === "wall"
           ? data.drawMode

@@ -5,9 +5,9 @@
   "license": "MIT",
   "description": "Standalone step-by-step Claw3D office sample. No OpenClaw gateway required — just npm run dev.",
   "scripts": {
-    "dev": "next dev --port 3001",
+    "dev": "next dev --port 5051",
     "build": "next build",
-    "start": "next start --port 3001",
+    "start": "next start --port 5050",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "demo-gateway": "node scripts/no-gateway-needed.mjs demo-gateway",

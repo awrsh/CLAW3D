@@ -25,6 +25,7 @@ import {
   COLLABORATOR_AGENT_ID,
   COLLABORATOR_NAME,
   createSampleFullStackPipeline,
+  createPipelineFromGoal,
   dialogueForWorkTodo,
   estimateWorkDialogueMs,
   workAgentDisplayName,
@@ -39,6 +40,11 @@ import {
 } from "@/features/office/ui/AgentChatPanel";
 import { WorkTodosPanel } from "@/features/office/ui/WorkTodosPanel";
 import { RoomToolsPanel } from "@/features/office/tools/RoomToolsPanel";
+import {
+  GhostButton,
+  SegmentedControl,
+  studioPanelClass,
+} from "@/features/office/ui/studioControls";
 import type {
   AgentFocusRequest,
   ForcedChatRequest,
@@ -442,6 +448,25 @@ export function OfficeStudio() {
     }
   };
 
+  const submitOrchestratorGoal = (goal: string) => {
+    awaitingWorkDoneRef.current = false;
+    if (workCompleteTimerRef.current != null) {
+      window.clearTimeout(workCompleteTimerRef.current);
+      workCompleteTimerRef.current = null;
+    }
+    if (workSessionStartTimerRef.current != null) {
+      window.clearTimeout(workSessionStartTimerRef.current);
+      workSessionStartTimerRef.current = null;
+    }
+    setForcedChatRequest(null);
+
+    const next = { ...createPipelineFromGoal(goal), running: true };
+    setPipeline(next);
+    applyPipelineAgents(next);
+    playBeep("place", buildingRef.current.muteSfx);
+    pushToast(`هدف جدید · ${next.todos.length} تسک`);
+  };
+
   useEffect(() => {
     if (!pipeline.running) return;
     // Start first/next ready todo; completion is driven by work-session done.
@@ -798,106 +823,124 @@ export function OfficeStudio() {
         </div>
       ) : null}
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-between p-4 font-mono">
-        <div className="rounded-lg border border-amber-800/30 bg-[#120e08]/95 px-3 py-2 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <span className="h-px w-8 bg-gradient-to-l from-amber-500/40 to-transparent" />
-            <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-amber-300/80">
-              Claw3D Office
-            </div>
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-between gap-3 p-4">
+        <div
+          className={`${studioPanelClass} px-3.5 py-2.5`}
+        >
+          <div className="text-[12px] font-semibold tracking-wide text-amber-100">
+            Claw3D Office
           </div>
-          <div className="mt-1 text-[9px] uppercase tracking-[0.16em] text-amber-500/55">
-            Drag · WASD · Ctrl+Z
+          <div className="mt-0.5 text-[10px] text-amber-500/55">
+            {building.editMode
+              ? "حالت ویرایش · درگ بعد از حرکت موس"
+              : "فقط مشاهده · برای جابه‌جایی «ویرایش» را بزن"}
             {canUndo ? " · Undo ready" : ""}
           </div>
         </div>
+
         <div className="flex flex-col items-end gap-2">
-          <div className="flex items-start gap-2">
-            <button
-              type="button"
-              onClick={() => setToolsOpen((open) => !open)}
-              className={`pointer-events-auto h-7 rounded-md border px-3 text-[9px] font-semibold uppercase tracking-widest backdrop-blur-sm transition ${
-                toolsOpen
-                  ? "border-amber-500/50 bg-amber-500/30 text-amber-300"
-                  : "border-amber-900/25 bg-[#1c1610]/85 text-amber-500/50 hover:border-amber-500/40 hover:bg-amber-500/30 hover:text-amber-300"
-              }`}
+          <div
+            className={`${studioPanelClass} pointer-events-auto flex items-center gap-1 p-1`}
+          >
+            <GhostButton
+              active={building.editMode}
+              onClick={() => {
+                setBuilding((current) => {
+                  const enabling = !current.editMode;
+                  if (enabling) setToolsOpen(true);
+                  return {
+                    ...current,
+                    editMode: enabling,
+                    drawMode: enabling ? current.drawMode : "none",
+                  };
+                });
+              }}
+              title={
+                building.editMode
+                  ? "خروج از ویرایش — صحنه فقط مشاهده"
+                  : "ورود به ویرایش — جابه‌جایی و تغییر فیچرها"
+              }
+            >
+              ویرایش
+            </GhostButton>
+            <GhostButton
+              active={toolsOpen}
+              onClick={() => {
+                setToolsOpen((open) => {
+                  const next = !open;
+                  if (next) {
+                    setBuilding((current) => ({
+                      ...current,
+                      editMode: true,
+                    }));
+                  }
+                  return next;
+                });
+              }}
               title={toolsOpen ? "بستن Tools" : "باز کردن Tools"}
             >
               Tools
-            </button>
-            <button
-              type="button"
+            </GhostButton>
+            <GhostButton
+              active={todosOpen}
               onClick={() => setTodosOpen((open) => !open)}
-              className={`pointer-events-auto h-7 rounded-md border px-3 text-[9px] font-semibold uppercase tracking-widest backdrop-blur-sm transition ${
-                todosOpen
-                  ? "border-sky-500/50 bg-sky-500/30 text-sky-200"
-                  : "border-amber-900/25 bg-[#1c1610]/85 text-amber-500/50 hover:border-amber-500/40 hover:bg-amber-500/30 hover:text-amber-300"
-              }`}
               title={todosOpen ? "بستن Todos" : "باز کردن Todos"}
+              className={
+                todosOpen
+                  ? "border-sky-500/45 bg-sky-500/25 text-sky-100"
+                  : undefined
+              }
             >
               Todos
-            </button>
-            <button
-              type="button"
+            </GhostButton>
+            <GhostButton
+              active={building.drawMode === "workspace"}
               onClick={() => {
                 const enabling = building.drawMode !== "workspace";
                 if (enabling) setToolsOpen(false);
                 setBuilding((current) => ({
                   ...current,
+                  editMode: enabling ? true : current.editMode,
                   drawMode: enabling ? "workspace" : "none",
                 }));
               }}
-              className={`pointer-events-auto h-7 rounded-md border px-3 text-[9px] font-semibold uppercase tracking-widest backdrop-blur-sm transition ${
-                building.drawMode === "workspace"
-                  ? "border-amber-500/50 bg-amber-500/30 text-amber-300"
-                  : "border-amber-900/25 bg-[#1c1610]/85 text-amber-500/50 hover:border-amber-500/40 hover:bg-amber-500/30 hover:text-amber-300"
-              }`}
               title="رسم محیط کاری روی زمین"
             >
               محیط کاری
-            </button>
-            <button
-              type="button"
+            </GhostButton>
+            <GhostButton
               disabled={!canUndo}
               onClick={undo}
-              className="pointer-events-auto h-7 rounded-md border border-amber-900/25 bg-[#1c1610]/85 px-3 text-[9px] font-semibold uppercase tracking-widest text-amber-500/50 backdrop-blur-sm transition enabled:hover:border-amber-500/40 enabled:hover:bg-amber-500/30 enabled:hover:text-amber-300 disabled:opacity-35"
               title="Ctrl+Z"
             >
               Undo
-            </button>
-            <div className="rounded-md border border-amber-900/25 bg-[#1c1610]/85 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.22em] text-amber-500/65 backdrop-blur-sm">
+            </GhostButton>
+            <span className="mx-1 h-4 w-px bg-amber-900/30" />
+            <span className="px-2 text-[9px] font-semibold tracking-wider text-amber-500/50">
               Sample
-            </div>
+            </span>
           </div>
+
           {building.drawMode === "workspace" ? (
-            <div className="pointer-events-auto flex items-center gap-2 rounded-md border border-amber-800/30 bg-[#120e08]/95 px-2.5 py-1.5 backdrop-blur-sm">
-              <div className="flex gap-1">
-                {(
-                  [
-                    ["rectangle", "مستطیل"],
-                    ["square", "مربع"],
-                  ] as const
-                ).map(([shape, label]) => (
-                  <button
-                    key={shape}
-                    type="button"
-                    onClick={() =>
-                      setBuilding((current) => ({
-                        ...current,
-                        workspaceShape: shape,
-                      }))
-                    }
-                    className={`rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-wider transition ${
-                      building.workspaceShape === shape
-                        ? "bg-amber-500/30 text-amber-300"
-                        : "text-amber-500/55 hover:text-amber-300"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <label className="flex cursor-pointer items-center gap-1.5 border-r border-amber-900/25 pr-2 text-[9px] text-amber-200/80">
+            <div
+              className={`${studioPanelClass} pointer-events-auto flex items-center gap-2 px-2.5 py-1.5`}
+            >
+              <SegmentedControl
+                size="sm"
+                value={building.workspaceShape}
+                onChange={(shape) =>
+                  setBuilding((current) => ({
+                    ...current,
+                    workspaceShape: shape,
+                  }))
+                }
+                options={[
+                  { value: "rectangle", label: "مستطیل" },
+                  { value: "square", label: "مربع" },
+                ]}
+                className="min-w-40"
+              />
+              <label className="flex cursor-pointer items-center gap-1.5 border-r border-amber-900/25 pr-2 text-[10px] text-amber-200/80">
                 <input
                   type="checkbox"
                   checked={building.workspaceWithWalls}
@@ -907,43 +950,44 @@ export function OfficeStudio() {
                       workspaceWithWalls: event.target.checked,
                     }))
                   }
-                  className="h-3 w-3 accent-amber-500"
+                  className="h-3.5 w-3.5 accent-amber-500"
                 />
                 با دیوار
               </label>
             </div>
           ) : null}
+
           {building.drawMode === "wall" ? (
-            <div className="pointer-events-auto flex items-center gap-2 rounded-md border border-amber-800/30 bg-[#120e08]/95 px-2.5 py-1.5 backdrop-blur-sm">
-              <span className="text-[9px] text-amber-200/80">
+            <div
+              className={`${studioPanelClass} pointer-events-auto flex items-center gap-2 px-2.5 py-1.5`}
+            >
+              <span className="text-[10px] text-amber-200/80">
                 رسم اتاق · {getObjectLabel(building.drawWallType)}
               </span>
-              <button
-                type="button"
+              <GhostButton
                 onClick={() =>
                   setBuilding((current) => ({
                     ...current,
                     drawMode: "none",
                   }))
                 }
-                className="rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-amber-400/80 hover:bg-amber-500/20 hover:text-amber-300"
               >
                 لغو
-              </button>
+              </GhostButton>
             </div>
           ) : null}
         </div>
       </div>
 
       <div
-        className={`pointer-events-none absolute z-20 flex max-w-xs flex-col gap-1.5 font-mono ${
+        className={`pointer-events-none absolute z-20 flex max-w-xs flex-col gap-1.5 ${
           todosOpen ? "bottom-4 left-4" : "bottom-4 right-4"
         }`}
       >
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className="rounded-full border border-amber-900/20 bg-black/60 px-3 py-1 text-[10px] text-amber-100 shadow-lg backdrop-blur-sm"
+            className="rounded-full border border-amber-800/25 bg-[#120e08]/90 px-3.5 py-1.5 text-[11px] text-amber-100 shadow-lg backdrop-blur-md"
           >
             {toast.message}
           </div>
@@ -973,6 +1017,7 @@ export function OfficeStudio() {
         onStep={stepWorkPipeline}
         onReset={resetWorkPipeline}
         onTodoClick={onTodoCardClick}
+        onSubmitGoal={submitOrchestratorGoal}
       />
 
       <RoomToolsPanel
