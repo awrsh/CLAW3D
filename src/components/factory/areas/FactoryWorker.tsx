@@ -1,76 +1,36 @@
 "use client";
 
 import { Billboard, Text } from "@react-three/drei";
-import { memo, useMemo, useRef } from "react";
+import { Component, memo, Suspense, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
+import { DoctorWalkingCharacter } from "@/components/factory/areas/DoctorWalkingCharacter";
+import {
+  ProceduralWorkerMesh,
+  uniformForWorkerRole,
+} from "@/components/factory/areas/ProceduralWorkerMesh";
 import {
   useWorkerAnimationBinding,
 } from "@/components/factory/areas/WorkerAnimationSystem";
+import { FACTORY_USE_DOCTOR_GLB } from "@/components/factory/assets/factorySceneConfig";
 import { buildWorkerPatrolPath } from "@/components/factory/simulation/workerNavMesh";
-import type { AreaWorker, FactoryAreaId, WorkerUniform } from "@/components/factory/simulation/ProductionState";
+import type { AreaWorker, FactoryAreaId } from "@/components/factory/simulation/ProductionState";
 
-const UNIFORMS: Record<
-  WorkerUniform,
-  { body: string; legs: string; skin: string; cap?: string }
-> = {
-  cleanroom: { body: "#f8fafc", legs: "#e2e8f0", skin: "#e8c4a0", cap: "#ffffff" },
-  lab: { body: "#f1f5f9", legs: "#334155", skin: "#e8c4a0", cap: "#e2e8f0" },
-  warehouse: { body: "#64748b", legs: "#475569", skin: "#d4a574" },
-  office: { body: "#1e293b", legs: "#334155", skin: "#e8c4a0" },
-  security: { body: "#0f172a", legs: "#1e293b", skin: "#c9956a" },
-};
-
-const BODY_GEO = new THREE.CapsuleGeometry(0.2, 0.52, 4, 8);
-const HEAD_GEO = new THREE.SphereGeometry(0.15, 10, 10);
-const LIMB_GEO = new THREE.BoxGeometry(0.09, 0.28, 0.09);
-const LEG_GEO = new THREE.BoxGeometry(0.12, 0.42, 0.12);
 const CLICK_GEO = new THREE.CapsuleGeometry(0.32, 1.1, 4, 8);
 
-const UNIFORM_MATS: Record<WorkerUniform, { body: THREE.MeshStandardMaterial; legs: THREE.MeshStandardMaterial; skin: THREE.MeshStandardMaterial }> = {
-  cleanroom: {
-    body: new THREE.MeshStandardMaterial({ color: UNIFORMS.cleanroom.body, roughness: 0.68 }),
-    legs: new THREE.MeshStandardMaterial({ color: UNIFORMS.cleanroom.legs, roughness: 0.75 }),
-    skin: new THREE.MeshStandardMaterial({ color: UNIFORMS.cleanroom.skin, roughness: 0.78 }),
-  },
-  lab: {
-    body: new THREE.MeshStandardMaterial({ color: UNIFORMS.lab.body, roughness: 0.68 }),
-    legs: new THREE.MeshStandardMaterial({ color: UNIFORMS.lab.legs, roughness: 0.75 }),
-    skin: new THREE.MeshStandardMaterial({ color: UNIFORMS.lab.skin, roughness: 0.78 }),
-  },
-  warehouse: {
-    body: new THREE.MeshStandardMaterial({ color: UNIFORMS.warehouse.body, roughness: 0.68 }),
-    legs: new THREE.MeshStandardMaterial({ color: UNIFORMS.warehouse.legs, roughness: 0.75 }),
-    skin: new THREE.MeshStandardMaterial({ color: UNIFORMS.warehouse.skin, roughness: 0.78 }),
-  },
-  office: {
-    body: new THREE.MeshStandardMaterial({ color: UNIFORMS.office.body, roughness: 0.68 }),
-    legs: new THREE.MeshStandardMaterial({ color: UNIFORMS.office.legs, roughness: 0.75 }),
-    skin: new THREE.MeshStandardMaterial({ color: UNIFORMS.office.skin, roughness: 0.78 }),
-  },
-  security: {
-    body: new THREE.MeshStandardMaterial({ color: UNIFORMS.security.body, roughness: 0.68 }),
-    legs: new THREE.MeshStandardMaterial({ color: UNIFORMS.security.legs, roughness: 0.75 }),
-    skin: new THREE.MeshStandardMaterial({ color: UNIFORMS.security.skin, roughness: 0.78 }),
-  },
-};
+class WorkerGlbErrorBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
 
-function uniformForWorker(worker: AreaWorker): WorkerUniform {
-  if (worker.uniform) return worker.uniform;
-  const r = worker.role.toLowerCase();
-  if (r.includes("security") || r.includes("reception")) return "security";
-  if (r.includes("warehouse") || r.includes("shipping") || r.includes("logistics"))
-    return "warehouse";
-  if (
-    r.includes("supervisor") ||
-    r.includes("director") ||
-    r.includes("clerk") ||
-    r.includes("coordinator") ||
-    r.includes("assistant")
-  )
-    return "office";
-  if (r.includes("scientist") || r.includes("analyst") || r.includes("microbiologist"))
-    return "lab";
-  return "cleanroom";
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) return this.props.fallback;
+    return this.props.children;
+  }
 }
 
 function hashId(id: string): number {
@@ -105,8 +65,7 @@ export const FactoryWorker = memo(function FactoryWorker({
   onSelect?: () => void;
   selected?: boolean;
 }) {
-  const uniformKey = uniformForWorker(worker);
-  const mats = UNIFORM_MATS[uniformKey];
+  const uniformKey = uniformForWorkerRole(worker.role, worker.uniform);
   const rootRef = useRef<THREE.Group>(null);
   const bodyRef = useRef<THREE.Group>(null);
   const leftArmRef = useRef<THREE.Group>(null);
@@ -134,6 +93,7 @@ export const FactoryWorker = memo(function FactoryWorker({
 
   const areaOffset = useMemo(() => new THREE.Vector3(0, 0, 0), []);
   const walking = waypoints.length >= 2;
+  const useGltfCharacter = FACTORY_USE_DOCTOR_GLB;
 
   const binding = useMemo(
     () => ({
@@ -149,13 +109,43 @@ export const FactoryWorker = memo(function FactoryWorker({
       baseYaw: worker.rotation ?? 0,
       walking,
       areaOffset,
+      useGltfCharacter,
     }),
-    [worker.id, worker.rotation, waypoints, patrol?.speed, walking, areaOffset],
+    [
+      worker.id,
+      worker.rotation,
+      waypoints,
+      patrol?.speed,
+      walking,
+      areaOffset,
+      useGltfCharacter,
+    ],
   );
 
   useWorkerAnimationBinding(binding);
 
   const initialYaw = worker.rotation ?? 0;
+
+  const proceduralFallback = (
+    <ProceduralWorkerMesh
+      uniformKey={uniformKey}
+      bodyRef={bodyRef}
+      leftArmRef={leftArmRef}
+      rightArmRef={rightArmRef}
+      leftLegRef={leftLegRef}
+      rightLegRef={rightLegRef}
+    />
+  );
+
+  const characterVisual = useGltfCharacter ? (
+    <WorkerGlbErrorBoundary fallback={proceduralFallback}>
+      <Suspense fallback={proceduralFallback}>
+        <DoctorWalkingCharacter walking={walking} />
+      </Suspense>
+    </WorkerGlbErrorBoundary>
+  ) : (
+    proceduralFallback
+  );
 
   return (
     <group ref={rootRef} position={worker.position} rotation={[0, initialYaw, 0]}>
@@ -180,36 +170,7 @@ export const FactoryWorker = memo(function FactoryWorker({
         </mesh>
       ) : null}
 
-      <group ref={bodyRef}>
-        <group ref={leftLegRef} position={[-0.1, 0.38, 0]}>
-          <mesh geometry={LEG_GEO} material={mats.legs} castShadow={false} />
-        </group>
-        <group ref={rightLegRef} position={[0.1, 0.38, 0]}>
-          <mesh geometry={LEG_GEO} material={mats.legs} castShadow={false} />
-        </group>
-
-        <mesh geometry={BODY_GEO} material={mats.body} position={[0, 0.95, 0]} castShadow={false} />
-        <mesh geometry={HEAD_GEO} material={mats.skin} position={[0, 1.48, 0]} castShadow={false} />
-
-        {UNIFORMS[uniformKey].cap ? (
-          <mesh position={[0, 1.58, 0]}>
-            <sphereGeometry args={[0.155, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2.2]} />
-            <meshStandardMaterial color={UNIFORMS[uniformKey].cap} roughness={0.85} />
-          </mesh>
-        ) : (
-          <mesh position={[0, 1.56, -0.02]}>
-            <boxGeometry args={[0.16, 0.06, 0.14]} />
-            <meshStandardMaterial color="#3d3028" roughness={0.9} />
-          </mesh>
-        )}
-
-        <group ref={leftArmRef} position={[-0.24, 1.12, 0]} rotation={[0, 0, Math.PI / 2]}>
-          <mesh geometry={LIMB_GEO} material={mats.body} position={[0, -0.14, 0]} castShadow={false} />
-        </group>
-        <group ref={rightArmRef} position={[0.24, 1.12, 0]} rotation={[0, 0, -Math.PI / 2]}>
-          <mesh geometry={LIMB_GEO} material={mats.body} position={[0, -0.14, 0]} castShadow={false} />
-        </group>
-      </group>
+      {characterVisual}
 
       {selected ? (
         <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>

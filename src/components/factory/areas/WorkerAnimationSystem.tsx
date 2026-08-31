@@ -19,6 +19,8 @@ export type WorkerAnimBinding = {
   walking: boolean;
   /** World offset applied to waypoints */
   areaOffset: THREE.Vector3;
+  /** Skip procedural limb swing — GLB handles walk visuals */
+  useGltfCharacter?: boolean;
 };
 
 const bindings = new Map<string, WorkerAnimBinding>();
@@ -60,6 +62,7 @@ export function WorkerAnimationLoop() {
         baseYaw,
         walking,
         areaOffset,
+        useGltfCharacter,
       } = entry;
 
       if (!rootRef.current) continue;
@@ -94,25 +97,29 @@ export function WorkerAnimationLoop() {
         );
 
         const walkCycle = elapsed * speed * 2.2;
-        const legSwing = Math.sin(walkCycle) * 0.42;
-        if (leftLegRef.current) leftLegRef.current.rotation.x = legSwing;
-        if (rightLegRef.current) rightLegRef.current.rotation.x = -legSwing;
-        if (bodyRef.current) {
-          bodyRef.current.position.y = Math.abs(Math.sin(walkCycle)) * 0.035;
-        }
-        if (leftArmRef.current) {
-          leftArmRef.current.rotation.z = Math.PI / 2 + Math.sin(walkCycle) * 0.08;
-        }
-        if (rightArmRef.current) {
-          rightArmRef.current.rotation.z = -Math.PI / 2 - Math.sin(walkCycle) * 0.08;
+        if (!useGltfCharacter) {
+          const legSwing = Math.sin(walkCycle) * 0.42;
+          if (leftLegRef.current) leftLegRef.current.rotation.x = legSwing;
+          if (rightLegRef.current) rightLegRef.current.rotation.x = -legSwing;
+          if (bodyRef.current) {
+            bodyRef.current.position.y = Math.abs(Math.sin(walkCycle)) * 0.035;
+          }
+          if (leftArmRef.current) {
+            leftArmRef.current.rotation.z = Math.PI / 2 + Math.sin(walkCycle) * 0.08;
+          }
+          if (rightArmRef.current) {
+            rightArmRef.current.rotation.z = -Math.PI / 2 - Math.sin(walkCycle) * 0.08;
+          }
         }
       } else {
         progress.current.delete(entry.id);
-        if (leftArmRef.current) leftArmRef.current.rotation.z = Math.PI / 2;
-        if (rightArmRef.current) rightArmRef.current.rotation.z = -Math.PI / 2;
-        if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
-        if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
-        if (bodyRef.current) bodyRef.current.position.y = 0;
+        if (!useGltfCharacter) {
+          if (leftArmRef.current) leftArmRef.current.rotation.z = Math.PI / 2;
+          if (rightArmRef.current) rightArmRef.current.rotation.z = -Math.PI / 2;
+          if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
+          if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
+          if (bodyRef.current) bodyRef.current.position.y = 0;
+        }
       }
     }
   });

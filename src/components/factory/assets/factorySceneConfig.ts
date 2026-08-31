@@ -1,6 +1,10 @@
 /** Set false after placing GLBs in public/models/factory/ */
 export const FACTORY_USE_PROXY_MODELS = true;
 
+/** 3DTree — Doctor Walking (Sketchfab 1af72132dfd0473a920e4d09497231e7) */
+export const DOCTOR_WALKING_GLB = "/models/factory/doctor-walking.glb";
+export const FACTORY_USE_DOCTOR_GLB = true;
+
 export const FACTORY_MODEL_PATHS = {
   bioreactorMain: "/models/factory/bioreactor-main.glb",
   bioreactorSecondary: "/models/factory/bioreactor-secondary.glb",

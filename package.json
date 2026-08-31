@@ -13,7 +13,8 @@
     "demo-gateway": "node scripts/no-gateway-needed.mjs demo-gateway",
     "hermes-adapter": "node scripts/no-gateway-needed.mjs hermes-adapter",
     "doctor": "node scripts/no-gateway-needed.mjs doctor",
-    "studio:setup": "node scripts/no-gateway-needed.mjs studio:setup"
+    "studio:setup": "node scripts/no-gateway-needed.mjs studio:setup",
+    "fetch:doctor-model": "node scripts/fetch-doctor-model.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

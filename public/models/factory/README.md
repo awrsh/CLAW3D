@@ -4,6 +4,14 @@ Place legally downloaded GLB/GLTF assets here, then set
 `FACTORY_USE_PROXY_MODELS = false` in
 `src/components/factory/assets/factorySceneConfig.ts`.
 
+## Personnel / characters
+
+| File | Reference |
+|------|-----------|
+| `doctor-walking.glb` | [Sketchfab Doctor Walking](https://sketchfab.com/3d-models/doctor-walking-1af72132dfd0473a920e4d09497231e7) by [3DTree](https://sketchfab.com/3dtree_llc) |
+
+Run `npm run fetch:doctor-model` for setup instructions. Export GLB from Sketchfab/3DTree and place at `public/models/factory/doctor-walking.glb`.
+
 ## Bioprocessing
 
 | File | Reference |
