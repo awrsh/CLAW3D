@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useFactory, STAGE_LABELS } from "@/components/factory/context/FactoryContext";
 import {
@@ -18,14 +19,53 @@ import {
   getBioreactorLiveReadings,
   getBioreactorSparkMetrics,
 } from "@/components/factory/simulation/bioreactorLiveData";
-import type { EquipmentReading } from "@/components/factory/simulation/ProductionState";
+import type { EquipmentReading, FactoryAreaId, ProductionStage } from "@/components/factory/simulation/ProductionState";
 import { Sparkline } from "@/components/factory/ui/Sparkline";
 
 const SPARKLINE_HISTORY = 36;
 
-export function FactoryHeader() {
+export function isProductionMode(state: {
+  isSimulating: boolean;
+  productionStage: ProductionStage;
+}) {
+  return state.isSimulating || state.productionStage !== "idle";
+}
+
+export function resolveContextAreaId(state: {
+  isSimulating: boolean;
+  productionStage: ProductionStage;
+  activeAreaId: FactoryAreaId | null;
+  selectedAreaId: FactoryAreaId | null;
+}): FactoryAreaId | null {
+  if (isProductionMode(state)) {
+    return state.activeAreaId ?? state.selectedAreaId;
+  }
+  return state.selectedAreaId ?? state.activeAreaId;
+}
+
+export function FactoryBrandBar() {
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-5 pt-5">
+    <div className="pointer-events-auto absolute left-4 top-4">
+      <div className="rounded-lg border border-white/10 bg-slate-900/90 px-3.5 py-2 shadow-lg shadow-slate-900/25 backdrop-blur-md">
+        <Image
+          src="/Cinnagen_Logo_Color.png"
+          alt="CinnaGen"
+          width={156}
+          height={52}
+          className="h-9 w-auto object-contain sm:h-10"
+          priority
+        />
+      </div>
+    </div>
+  );
+}
+
+export function FactoryHeader() {
+  const { state } = useFactory();
+  if (isProductionMode(state)) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 px-5 pt-5">
       <div className="mx-auto max-w-3xl text-center">
         <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">
           Interactive Digital Twin
@@ -431,14 +471,14 @@ export function EquipmentInfoPanel() {
 
 export function AreaInfoPanel() {
   const { state, selectArea, enterRoomView } = useFactory();
-  const areaId = state.selectedAreaId ?? state.activeAreaId;
+  const areaId = resolveContextAreaId(state);
   if (!areaId) return null;
 
   const area = FACTORY_AREA_MAP[areaId];
   const tourIndex = state.guidedTourActive ? state.guidedTourIndex : -1;
   const tourArea = tourIndex >= 0 ? GUIDED_TOUR_ORDER[tourIndex] : null;
   const inRoom = state.sceneViewMode === "room" && state.roomAreaId === areaId;
-  const isSimStage = state.isSimulating && state.activeAreaId === areaId;
+  const inProduction = isProductionMode(state);
 
   return (
     <div
@@ -454,19 +494,24 @@ export function AreaInfoPanel() {
         ×
       </button>
       <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-teal-700">
-        {state.guidedTourActive
-          ? "Guided Tour"
-          : inRoom
-            ? "3D Room View"
-            : isSimStage
-              ? "Active Stage"
+        {inProduction
+          ? "Production Stage"
+          : state.guidedTourActive
+            ? "Guided Tour"
+            : inRoom
+              ? "3D Room View"
               : "Department"}
       </div>
       <h2 className="mt-1 text-base font-medium text-slate-800">{area.name}</h2>
+      {inProduction ? (
+        <p className="mt-1 text-[10px] font-medium uppercase tracking-wider text-teal-700">
+          {STAGE_LABELS[state.productionStage]}
+        </p>
+      ) : null}
       <p className="mt-1.5 text-xs font-medium text-teal-800/90">{area.purpose}</p>
       <p className="mt-2 text-xs leading-relaxed text-slate-600">{area.description}</p>
 
-      {!inRoom ? (
+      {!inRoom && !inProduction ? (
         <button
           type="button"
           onClick={() => enterRoomView(areaId)}
@@ -491,6 +536,11 @@ export function AreaInfoPanel() {
  */
 export function ContextualRightPanel() {
   const { state } = useFactory();
+  const inProduction = isProductionMode(state);
+
+  if (inProduction) {
+    return <AreaInfoPanel />;
+  }
 
   if (state.selectedWorkerId) {
     return <WorkerInfoPanel />;

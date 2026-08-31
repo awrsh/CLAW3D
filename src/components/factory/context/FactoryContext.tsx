@@ -82,6 +82,9 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
       productionStage: stage,
       overallProgress: Math.round(((clamped + 1) / PRODUCTION_STAGES.length) * 100),
       activeAreaId: area,
+      selectedAreaId: area,
+      selectedEquipmentId: null,
+      selectedWorkerId: null,
       isSimulating: true,
     }));
     if (area && fly) flyHandlerRef.current?.(area, "overview");
@@ -104,6 +107,9 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
           productionStage: "finished",
           overallProgress: 100,
           activeAreaId: "finished-goods",
+          selectedAreaId: "finished-goods",
+          selectedEquipmentId: null,
+          selectedWorkerId: null,
           productionPaused: false,
         }));
         flyHandlerRef.current?.("finished-goods", "overview");
