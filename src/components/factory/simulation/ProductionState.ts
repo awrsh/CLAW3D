@@ -96,6 +96,8 @@ export type SimulatedEquipment = {
   readings: EquipmentReading[];
 };
 
+export type SceneViewMode = "facility" | "room";
+
 export type FactorySimulationState = {
   productionStage: ProductionStage;
   overallProgress: number;
@@ -106,6 +108,9 @@ export type FactorySimulationState = {
   selectedEquipmentId: string | null;
   activeAreaId: FactoryAreaId | null;
   introComplete: boolean;
+  /** Facility overview (dollhouse) vs immersive single-room digital twin */
+  sceneViewMode: SceneViewMode;
+  roomAreaId: FactoryAreaId | null;
 };
 
 export const PRODUCTION_STAGES: ProductionStage[] = [
@@ -165,5 +170,7 @@ export function createInitialSimulationState(): FactorySimulationState {
     selectedEquipmentId: null,
     activeAreaId: null,
     introComplete: false,
+    sceneViewMode: "facility",
+    roomAreaId: null,
   };
 }

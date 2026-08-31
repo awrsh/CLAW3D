@@ -5,6 +5,7 @@ import { useFactory, STAGE_LABELS } from "@/components/factory/context/FactoryCo
 import {
   FACTORY_AREA_MAP,
   GUIDED_TOUR_ORDER,
+  equipmentForArea,
   getEquipment,
 } from "@/components/factory/simulation/factoryLayout";
 import { getFactoryAsset } from "@/components/factory/assets/factoryAssets";
@@ -12,6 +13,7 @@ import {
   machineStatusLabel,
   resolveMachineStatus,
 } from "@/components/factory/simulation/EquipmentState";
+import { getRoomTwinSnapshot } from "@/components/factory/simulation/roomTwinData";
 import type { FactoryAreaId } from "@/components/factory/simulation/ProductionState";
 
 const MAP_CELLS: { id: FactoryAreaId; label: string }[][] = [
@@ -40,6 +42,122 @@ const MAP_CELLS: { id: FactoryAreaId; label: string }[][] = [
     { id: "finished-goods", label: "Done" },
   ],
 ];
+
+export function SceneViewToggle() {
+  const { state, setSceneViewMode, enterRoomView } = useFactory();
+  const inRoom = state.sceneViewMode === "room";
+
+  return (
+    <div className="pointer-events-auto flex rounded-lg border border-white/60 bg-white/80 p-0.5 shadow-sm backdrop-blur-sm">
+      <button
+        type="button"
+        onClick={() => setSceneViewMode("facility")}
+        className={`rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition ${
+          !inRoom
+            ? "bg-teal-700 text-white"
+            : "text-slate-600 hover:bg-slate-100"
+        }`}
+      >
+        Facility
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const id = state.selectedAreaId ?? "bioreactor";
+          enterRoomView(id);
+        }}
+        className={`rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition ${
+          inRoom
+            ? "bg-teal-700 text-white"
+            : "text-slate-600 hover:bg-slate-100"
+        }`}
+      >
+        3D Room
+      </button>
+    </div>
+  );
+}
+
+export function RoomModeBanner() {
+  const { state, exitRoomView } = useFactory();
+  if (state.sceneViewMode !== "room" || !state.roomAreaId) return null;
+
+  const area = FACTORY_AREA_MAP[state.roomAreaId];
+
+  return (
+    <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-teal-500/30 bg-teal-950/85 px-3 py-2 font-mono text-[10px] text-emerald-400 shadow-lg backdrop-blur-sm">
+      <span className="text-emerald-600">DIGITAL TWIN</span>
+      <span className="text-emerald-300">/</span>
+      <span>{area.shortName.toUpperCase()}</span>
+      <button
+        type="button"
+        onClick={exitRoomView}
+        className="ml-2 rounded border border-emerald-700/50 px-2 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-900/50"
+      >
+        Exit Room
+      </button>
+    </div>
+  );
+}
+
+export function RoomTwinPanel() {
+  const { state } = useFactory();
+  if (state.sceneViewMode !== "room" || !state.roomAreaId) return null;
+
+  const area = FACTORY_AREA_MAP[state.roomAreaId];
+  const equipment = equipmentForArea(state.roomAreaId);
+  const twin = getRoomTwinSnapshot(
+    state.roomAreaId,
+    state.isSimulating,
+    area.workers.length,
+    equipment.length,
+  );
+  const machineStatus = area.productionStage
+    ? resolveMachineStatus(state.roomAreaId, state.productionStage, state.isSimulating)
+    : null;
+
+  return (
+    <div className="pointer-events-auto w-[min(100%,300px)] rounded-lg border border-teal-500/25 bg-slate-900/92 p-3 font-mono text-[10px] text-emerald-400 shadow-lg backdrop-blur-sm">
+      <div className="flex items-start justify-between gap-2 border-b border-emerald-900/50 pb-2">
+        <div>
+          <div className="text-[8px] uppercase tracking-widest text-emerald-600">
+            Room Digital Twin
+          </div>
+          <div className="mt-0.5 text-xs font-medium text-emerald-200">{area.name}</div>
+        </div>
+        {machineStatus ? (
+          <span className="rounded bg-emerald-950 px-1.5 py-0.5 text-[8px] uppercase text-emerald-300">
+            {machineStatusLabel(machineStatus)}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-2 space-y-1">
+        {twin.readings.map((r) => (
+          <div key={r.label} className="flex justify-between gap-2">
+            <span className="text-emerald-700">{r.label}</span>
+            <span className={r.status === "active" ? "text-emerald-300" : ""}>{r.value}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex justify-between border-t border-emerald-900/50 pt-2 text-[9px]">
+        <span className="text-emerald-700">Equipment online</span>
+        <span>{twin.equipmentOnline}</span>
+      </div>
+      <div className="flex justify-between text-[9px]">
+        <span className="text-emerald-700">Personnel</span>
+        <span>{twin.personnelCount}</span>
+      </div>
+      {twin.batchId !== "—" ? (
+        <div className="mt-2 border-t border-emerald-900/50 pt-2 text-emerald-300">
+          Batch: {twin.batchId}
+        </div>
+      ) : null}
+      <p className="mt-2 text-[8px] text-emerald-800">
+        Simulated sensor data — illustrative digital twin only.
+      </p>
+    </div>
+  );
+}
 
 export function FactoryMap() {
   const { state, selectArea } = useFactory();
@@ -198,13 +316,14 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export function AreaInfoPanel() {
-  const { state, selectArea } = useFactory();
+  const { state, selectArea, enterRoomView } = useFactory();
   const areaId = state.selectedAreaId;
   if (!areaId) return null;
 
   const area = FACTORY_AREA_MAP[areaId];
   const tourIndex = state.guidedTourActive ? state.guidedTourIndex : -1;
   const tourArea = tourIndex >= 0 ? GUIDED_TOUR_ORDER[tourIndex] : null;
+  const inRoom = state.sceneViewMode === "room" && state.roomAreaId === areaId;
 
   return (
     <div className="pointer-events-auto relative w-[min(100%,320px)] rounded-lg border border-white/60 bg-white/85 p-4 shadow-sm backdrop-blur-sm">
@@ -217,13 +336,23 @@ export function AreaInfoPanel() {
         ×
       </button>
       <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-teal-700">
-        {state.guidedTourActive ? "Guided Tour" : "Department"}
+        {state.guidedTourActive ? "Guided Tour" : inRoom ? "3D Room View" : "Department"}
       </div>
       <h2 className="mt-1 text-base font-medium text-slate-800">{area.name}</h2>
       <p className="mt-1.5 text-xs font-medium text-teal-800/90">{area.purpose}</p>
       <p className="mt-2 text-xs leading-relaxed text-slate-600">
         {area.description}
       </p>
+
+      {!inRoom ? (
+        <button
+          type="button"
+          onClick={() => enterRoomView(areaId)}
+          className="mt-3 w-full rounded-md border border-teal-700/30 bg-teal-700 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-white transition hover:bg-teal-800"
+        >
+          Enter 3D Room
+        </button>
+      ) : null}
 
       {area.workers.length > 0 ? (
         <div className="mt-3 border-t border-slate-100 pt-3">

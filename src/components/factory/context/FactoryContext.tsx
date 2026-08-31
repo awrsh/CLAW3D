@@ -17,6 +17,7 @@ import {
   type FactoryAreaId,
   type FactorySimulationState,
   type ProductionStage,
+  type SceneViewMode,
 } from "@/components/factory/simulation/ProductionState";
 import {
   FACTORY_AREA_MAP,
@@ -38,6 +39,9 @@ type FactoryContextValue = {
   advanceGuidedTour: () => void;
   setIntroComplete: (value: boolean) => void;
   flyToArea: (id: FactoryAreaId) => void;
+  enterRoomView: (id: FactoryAreaId) => void;
+  exitRoomView: () => void;
+  setSceneViewMode: (mode: SceneViewMode) => void;
   onFlyToArea?: (id: FactoryAreaId) => void;
   registerFlyHandler: (handler: (id: FactoryAreaId, mode?: CameraViewMode) => void) => void;
 };
@@ -61,12 +65,56 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const selectArea = useCallback((id: FactoryAreaId | null) => {
+    setState((s) => {
+      if (id) {
+        const cameraMode: CameraViewMode =
+          s.sceneViewMode === "room" ? "room-interior" : "cinematic";
+        flyHandlerRef.current?.(id, cameraMode);
+      }
+      return {
+        ...s,
+        selectedAreaId: id,
+        selectedEquipmentId: null,
+        ...(id && s.sceneViewMode === "room" ? { roomAreaId: id } : {}),
+      };
+    });
+  }, []);
+
+  const enterRoomView = useCallback((id: FactoryAreaId) => {
     setState((s) => ({
       ...s,
+      sceneViewMode: "room",
+      roomAreaId: id,
       selectedAreaId: id,
       selectedEquipmentId: null,
+      guidedTourActive: false,
     }));
-    if (id) flyHandlerRef.current?.(id, "cinematic");
+    flyHandlerRef.current?.(id, "room-interior");
+  }, []);
+
+  const exitRoomView = useCallback(() => {
+    setState((s) => {
+      const id = s.roomAreaId ?? s.selectedAreaId;
+      if (id) flyHandlerRef.current?.(id, "cinematic");
+      return {
+        ...s,
+        sceneViewMode: "facility",
+        roomAreaId: null,
+      };
+    });
+  }, []);
+
+  const setSceneViewMode = useCallback((mode: SceneViewMode) => {
+    setState((s) => {
+      if (mode === "room") {
+        const id = s.roomAreaId ?? s.selectedAreaId ?? "bioreactor";
+        flyHandlerRef.current?.(id, "room-interior");
+        return { ...s, sceneViewMode: "room", roomAreaId: id, selectedAreaId: id };
+      }
+      const id = s.roomAreaId ?? s.selectedAreaId;
+      if (id) flyHandlerRef.current?.(id, "cinematic");
+      return { ...s, sceneViewMode: "facility", roomAreaId: null };
+    });
   }, []);
 
   const selectEquipment = useCallback((id: string | null) => {
@@ -93,6 +141,8 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
       productionStage: PRODUCTION_STAGES[0],
       overallProgress: 5,
       activeAreaId: stageToArea(PRODUCTION_STAGES[0]),
+      sceneViewMode: "facility",
+      roomAreaId: null,
     }));
     flyHandlerRef.current?.(stageToArea(PRODUCTION_STAGES[0])!, "overview");
 
@@ -131,6 +181,8 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
       guidedTourActive: true,
       guidedTourIndex: 0,
       selectedAreaId: GUIDED_TOUR_ORDER[0],
+      sceneViewMode: "facility",
+      roomAreaId: null,
     }));
     flyHandlerRef.current?.(GUIDED_TOUR_ORDER[0], "cinematic");
   }, [stopProduction]);
@@ -185,6 +237,9 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
       advanceGuidedTour,
       setIntroComplete,
       flyToArea,
+      enterRoomView,
+      exitRoomView,
+      setSceneViewMode,
       registerFlyHandler,
     }),
     [
@@ -198,6 +253,9 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
       advanceGuidedTour,
       setIntroComplete,
       flyToArea,
+      enterRoomView,
+      exitRoomView,
+      setSceneViewMode,
       registerFlyHandler,
     ],
   );

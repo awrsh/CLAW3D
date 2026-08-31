@@ -3,94 +3,189 @@
 import { memo } from "react";
 import * as THREE from "three";
 import {
+  FACTORY_AREAS,
   FACTORY_COLORS,
   FACTORY_DIMENSIONS,
+  getAreaOpenSide,
 } from "@/components/factory/simulation/factoryLayout";
+import type { FactoryAreaId, SceneViewMode } from "@/components/factory/simulation/ProductionState";
 
 const { width, depth, height } = FACTORY_DIMENSIONS;
 
 /** Which edge faces the corridor / default viewer (open side). */
 type OpenSide = "south" | "north";
 
+export type RoomShellVariant = "cutaway" | "full" | "ghost";
+
 function RoomShell({
   center,
   size,
   openSide = "south",
   partitionHeight = 2.2,
+  variant = "cutaway",
 }: {
   center: [number, number, number];
   size: [number, number];
   openSide?: OpenSide;
   partitionHeight?: number;
+  variant?: RoomShellVariant;
 }) {
   const [cx, , cz] = center;
   const [w, d] = size;
   const hw = w / 2;
   const hd = d / 2;
   const wallT = 0.12;
+  const isFull = variant === "full";
+  const isGhost = variant === "ghost";
+  const wallOpacity = isGhost ? 0.18 : 1;
+  const wallTransparent = isGhost;
 
-  // Back wall sits opposite the open (corridor) side
   const backZ = openSide === "south" ? -hd : hd;
+  const frontZ = openSide === "south" ? hd : -hd;
+  const sideWallH = isFull ? height : partitionHeight;
+
+  const wallMat = (
+    <meshStandardMaterial
+      color={isFull ? FACTORY_COLORS.wall : FACTORY_COLORS.wallAccent}
+      roughness={0.88}
+      transparent={wallTransparent}
+      opacity={wallOpacity}
+      depthWrite={!wallTransparent}
+    />
+  );
 
   return (
     <group position={[cx, 0, cz]}>
-      {/* Floor */}
+      {/* Floor — twin grid in full room mode */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
         <planeGeometry args={[w - 0.3, d - 0.3]} />
-        <meshStandardMaterial color="#f8fafc" roughness={0.55} metalness={0.12} envMapIntensity={0.75} />
+        <meshStandardMaterial
+          color={isFull ? "#f1f5f9" : "#f8fafc"}
+          roughness={isFull ? 0.42 : 0.55}
+          metalness={isFull ? 0.14 : 0.12}
+          envMapIntensity={0.75}
+        />
       </mesh>
 
-      {/* Full-height back wall */}
-      <mesh position={[0, height / 2, backZ]} castShadow receiveShadow>
+      {isFull ? (
+        <group>
+          {Array.from({ length: Math.floor(w / 1.2) + 1 }).map((_, i) => (
+            <mesh
+              key={`gx-${i}`}
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[-hw + i * 1.2, 0.015, 0]}
+            >
+              <planeGeometry args={[0.02, d - 0.5]} />
+              <meshBasicMaterial color="#cbd5e1" transparent opacity={0.35} />
+            </mesh>
+          ))}
+          {Array.from({ length: Math.floor(d / 1.2) + 1 }).map((_, i) => (
+            <mesh
+              key={`gz-${i}`}
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[0, 0.015, -hd + i * 1.2]}
+            >
+              <planeGeometry args={[w - 0.5, 0.02]} />
+              <meshBasicMaterial color="#cbd5e1" transparent opacity={0.35} />
+            </mesh>
+          ))}
+        </group>
+      ) : null}
+
+      {/* Back wall */}
+      <mesh position={[0, height / 2, backZ]} castShadow={!isGhost} receiveShadow>
         <boxGeometry args={[w, height, wallT]} />
-        <meshStandardMaterial color={FACTORY_COLORS.wall} roughness={0.88} />
+        {wallMat}
       </mesh>
 
-      {/* Low side partitions — open above for dollhouse visibility */}
+      {/* Side walls */}
       {[-1, 1].map((side) => (
         <mesh
           key={side}
-          position={[side * hw, partitionHeight / 2, 0]}
-          castShadow
+          position={[side * hw, sideWallH / 2, 0]}
+          castShadow={!isGhost}
           receiveShadow
         >
-          <boxGeometry args={[wallT, partitionHeight, d - 0.2]} />
-          <meshStandardMaterial color={FACTORY_COLORS.wallAccent} roughness={0.9} />
+          <boxGeometry args={[wallT, sideWallH, d - 0.2]} />
+          {wallMat}
         </mesh>
       ))}
 
-      {/* Open front: only low curb + glass mullions (no solid wall) */}
-      <group position={[0, 0, openSide === "south" ? hd : -hd]}>
-        <mesh position={[0, 0.06, 0]} receiveShadow>
-          <boxGeometry args={[w - 0.4, 0.12, wallT]} />
-          <meshStandardMaterial color="#cbd5e1" roughness={0.7} />
-        </mesh>
-        {[-0.35, 0, 0.35].map((xOff) => (
-          <mesh key={xOff} position={[xOff * w, partitionHeight / 2, 0]}>
-            <boxGeometry args={[0.06, partitionHeight, wallT * 0.6]} />
-            <meshPhysicalMaterial
-              color={FACTORY_COLORS.glass}
-              metalness={0.05}
-              roughness={0.08}
-              transmission={0.72}
-              transparent
-              opacity={0.35}
-              depthWrite={false}
-            />
+      {/* Front — cutaway mullions OR full wall with door */}
+      {isFull ? (
+        <group position={[0, 0, frontZ]}>
+          {/* Left wall segment */}
+          <mesh position={[-hw / 2 - 0.5, height / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[hw - 1.2, height, wallT]} />
+            {wallMat}
           </mesh>
-        ))}
-      </group>
+          {/* Right wall segment */}
+          <mesh position={[hw / 2 + 0.5, height / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[hw - 1.2, height, wallT]} />
+            {wallMat}
+          </mesh>
+          {/* Door header */}
+          <mesh position={[0, height - 0.35, 0]} castShadow>
+            <boxGeometry args={[2.2, 0.7, wallT]} />
+            {wallMat}
+          </mesh>
+          {/* Glass door panels */}
+          {[-0.55, 0.55].map((xOff) => (
+            <mesh key={xOff} position={[xOff, 1.05, 0]}>
+              <boxGeometry args={[0.9, 2.1, wallT * 0.5]} />
+              <meshPhysicalMaterial
+                color={FACTORY_COLORS.glass}
+                metalness={0.08}
+                roughness={0.06}
+                transmission={0.65}
+                transparent
+                opacity={0.45}
+                depthWrite={false}
+              />
+            </mesh>
+          ))}
+        </group>
+      ) : (
+        <group position={[0, 0, frontZ]}>
+          <mesh position={[0, 0.06, 0]} receiveShadow>
+            <boxGeometry args={[w - 0.4, 0.12, wallT]} />
+            <meshStandardMaterial color="#cbd5e1" roughness={0.7} transparent={wallTransparent} opacity={wallOpacity} />
+          </mesh>
+          {[-0.35, 0, 0.35].map((xOff) => (
+            <mesh key={xOff} position={[xOff * w, partitionHeight / 2, 0]}>
+              <boxGeometry args={[0.06, partitionHeight, wallT * 0.6]} />
+              <meshPhysicalMaterial
+                color={FACTORY_COLORS.glass}
+                metalness={0.05}
+                roughness={0.08}
+                transmission={0.72}
+                transparent
+                opacity={isGhost ? 0.12 : 0.35}
+                depthWrite={false}
+              />
+            </mesh>
+          ))}
+        </group>
+      )}
+
+      {/* Ceiling — full room only */}
+      {isFull ? (
+        <mesh position={[0, height - 0.06, 0]} receiveShadow>
+          <boxGeometry args={[w - 0.2, 0.12, d - 0.2]} />
+          <meshStandardMaterial color="#f8fafc" roughness={0.92} emissive="#ffffff" emissiveIntensity={0.06} />
+        </mesh>
+      ) : null}
 
       {/* Corner posts */}
       {[
         [-hw, backZ],
         [hw, backZ],
-        [-hw, openSide === "south" ? hd : -hd],
-        [hw, openSide === "south" ? hd : -hd],
+        [-hw, frontZ],
+        [hw, frontZ],
       ].map(([x, z], i) => (
-        <mesh key={i} position={[x, height / 2, z]} castShadow>
+        <mesh key={i} position={[x, height / 2, z]} castShadow={!isGhost}>
           <boxGeometry args={[0.14, height, 0.14]} />
-          <meshStandardMaterial color="#e2e8f0" roughness={0.85} />
+          <meshStandardMaterial color="#e2e8f0" roughness={0.85} transparent={wallTransparent} opacity={wallOpacity} />
         </mesh>
       ))}
     </group>
@@ -176,31 +271,30 @@ export const FactoryEnvironment = memo(function FactoryEnvironment() {
   );
 });
 
-export const FactoryRoomShells = memo(function FactoryRoomShells() {
+export const FactoryRoomShells = memo(function FactoryRoomShells({
+  sceneViewMode = "facility",
+  roomAreaId = null,
+}: {
+  sceneViewMode?: SceneViewMode;
+  roomAreaId?: FactoryAreaId | null;
+}) {
   return (
     <group>
-      {/* North wing — open toward corridor (south) */}
-      <RoomShell center={[0, 0, 24]} size={[22, 14]} openSide="south" />
-      <RoomShell center={[-36, 0, 24]} size={[12, 12]} openSide="south" />
-      <RoomShell center={[36, 0, 24]} size={[12, 12]} openSide="south" />
-      <RoomShell center={[-18, 0, 18]} size={[20, 18]} openSide="south" />
-      <RoomShell center={[18, 0, 18]} size={[18, 14]} openSide="south" />
-
-      {/* Main production row — open south toward viewer */}
-      <RoomShell center={[-48, 0, 0]} size={[16, 18]} openSide="south" />
-      <RoomShell center={[-32, 0, 0]} size={[14, 16]} openSide="south" />
-      <RoomShell center={[-16, 0, 0]} size={[14, 16]} openSide="south" />
-      <RoomShell center={[0, 0, 0]} size={[16, 18]} openSide="south" />
-      <RoomShell center={[16, 0, 0]} size={[14, 16]} openSide="south" />
-      <RoomShell center={[32, 0, 0]} size={[16, 16]} openSide="south" />
-      <RoomShell center={[48, 0, 0]} size={[14, 14]} openSide="south" />
-
-      {/* South wing — open north toward corridor */}
-      <RoomShell center={[0, 0, -16]} size={[16, 16]} openSide="north" />
-      <RoomShell center={[16, 0, -16]} size={[14, 14]} openSide="north" />
-      <RoomShell center={[32, 0, -16]} size={[16, 16]} openSide="north" />
-      <RoomShell center={[48, 0, -16]} size={[16, 16]} openSide="north" />
-      <RoomShell center={[-18, 0, -16]} size={[18, 14]} openSide="north" />
+      {FACTORY_AREAS.map((area) => {
+        let variant: RoomShellVariant = "cutaway";
+        if (sceneViewMode === "room") {
+          variant = area.id === roomAreaId ? "full" : "ghost";
+        }
+        return (
+          <RoomShell
+            key={area.id}
+            center={area.center}
+            size={area.size}
+            openSide={getAreaOpenSide(area)}
+            variant={variant}
+          />
+        );
+      })}
     </group>
   );
 });

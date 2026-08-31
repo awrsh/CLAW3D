@@ -17,6 +17,7 @@ import {
   getAreaCameraView,
   type CameraViewMode,
 } from "@/components/factory/simulation/factoryLayout";
+import { useFactory } from "@/components/factory/context/FactoryContext";
 
 export type FactoryCameraHandle = {
   resetView: () => void;
@@ -43,6 +44,7 @@ type FlyState = {
   start: number;
   duration: number;
   onComplete?: () => void;
+  interior?: boolean;
 };
 
 const MIN_FLY_HEIGHT = 20;
@@ -67,11 +69,15 @@ export const FactoryCamera = forwardRef<FactoryCameraHandle, CameraControlsProps
       setControlsEnabled(true);
     };
 
+    const { state } = useFactory();
+    const inRoom = state.sceneViewMode === "room";
+
     const flyTo = (
       position: [number, number, number],
       target: [number, number, number],
       duration = 1.2,
       onComplete?: () => void,
+      interior = false,
     ) => {
       const controls = controlsRef.current;
       const currentTarget = controls
@@ -86,6 +92,7 @@ export const FactoryCamera = forwardRef<FactoryCameraHandle, CameraControlsProps
         start: performance.now(),
         duration: duration * 1000,
         onComplete,
+        interior,
       };
       setControlsEnabled(false);
     };
@@ -93,8 +100,8 @@ export const FactoryCamera = forwardRef<FactoryCameraHandle, CameraControlsProps
     const flyToArea = (id: FactoryAreaId, mode: CameraViewMode = "cinematic") => {
       const area = FACTORY_AREA_MAP[id];
       const view = getAreaCameraView(area, mode);
-      const duration = mode === "overview" ? 1 : 1.4;
-      flyTo(view.position, view.target, duration);
+      const duration = mode === "overview" ? 1 : mode === "room-interior" ? 1.1 : 1.4;
+      flyTo(view.position, view.target, duration, undefined, mode === "room-interior");
     };
 
     const resetView = () => {
@@ -127,11 +134,14 @@ export const FactoryCamera = forwardRef<FactoryCameraHandle, CameraControlsProps
       const t = Math.min(1, (performance.now() - fly.start) / fly.duration);
       const eased = 1 - Math.pow(1 - t, 3);
 
-      const flat = new THREE.Vector3().lerpVectors(fly.fromPos, fly.toPos, eased);
-      const arc = Math.sin(Math.PI * eased) * ARC_PEAK;
-      const safeY = Math.max(flat.y + arc, MIN_FLY_HEIGHT);
-
-      camera.position.set(flat.x, safeY, flat.z);
+      if (fly.interior) {
+        camera.position.lerpVectors(fly.fromPos, fly.toPos, eased);
+      } else {
+        const flat = new THREE.Vector3().lerpVectors(fly.fromPos, fly.toPos, eased);
+        const arc = Math.sin(Math.PI * eased) * ARC_PEAK;
+        const safeY = Math.max(flat.y + arc, MIN_FLY_HEIGHT);
+        camera.position.set(flat.x, safeY, flat.z);
+      }
 
       const target = new THREE.Vector3().lerpVectors(
         fly.fromTarget,
@@ -173,10 +183,10 @@ export const FactoryCamera = forwardRef<FactoryCameraHandle, CameraControlsProps
         rotateSpeed={0.75}
         zoomSpeed={1.2}
         panSpeed={1.2}
-        minDistance={8}
-        maxDistance={130}
-        minPolarAngle={0.08}
-        maxPolarAngle={Math.PI / 2.05}
+        minDistance={inRoom ? 1.2 : 8}
+        maxDistance={inRoom ? 24 : 130}
+        minPolarAngle={inRoom ? 0.02 : 0.08}
+        maxPolarAngle={inRoom ? Math.PI / 2.01 : Math.PI / 2.05}
         autoRotate={autoRotate && controlsEnabled}
         autoRotateSpeed={0.28}
         mouseButtons={{

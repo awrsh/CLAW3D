@@ -42,20 +42,47 @@ export const DEFAULT_FACTORY_CAMERA = {
   target: [0, 0, 0] as [number, number, number],
 };
 
-export type CameraViewMode = "overview" | "cinematic";
+export type CameraViewMode = "overview" | "cinematic" | "room-interior";
+
+export type AreaOpenSide = "south" | "north";
+
+export function getAreaOpenSide(area: FactoryAreaMeta): AreaOpenSide {
+  return area.center[2] < -4 ? "north" : "south";
+}
+
+/** Immersive first-person-style view from inside the room entrance */
+export function getRoomInteriorCameraView(
+  area: FactoryAreaMeta,
+): { position: [number, number, number]; target: [number, number, number] } {
+  const [cx, , cz] = area.center;
+  const [, d] = area.size;
+  const hd = d / 2;
+  const openSide = getAreaOpenSide(area);
+  const camZ = openSide === "south" ? cz + hd - 3.2 : cz - hd + 3.2;
+  const targetZ = openSide === "south" ? cz - 1 : cz + 1;
+
+  return {
+    position: [cx + 0.8, 1.62, camZ],
+    target: [cx, 1.35, targetZ],
+  };
+}
 
 /** Camera views for open-top dollhouse layout — always from open side / above. */
 export function getAreaCameraView(
   area: FactoryAreaMeta,
   mode: CameraViewMode = "cinematic",
 ): { position: [number, number, number]; target: [number, number, number] } {
+  if (mode === "room-interior") {
+    return getRoomInteriorCameraView(area);
+  }
+
   const [cx, , cz] = area.center;
   const [, d] = area.size;
   const hd = d / 2;
   const target: [number, number, number] = [cx, 1.2, cz];
 
   // South wing (cz < -4) opens north; all others open south toward corridor
-  const opensNorth = cz < -4;
+  const opensNorth = getAreaOpenSide(area) === "north";
   const openEdgeZ = opensNorth ? cz - hd : cz + hd;
   const margin = mode === "overview" ? 18 : 10;
   const camZ = opensNorth ? openEdgeZ - margin : openEdgeZ + margin;

@@ -13,6 +13,9 @@ import {
   FactoryMap,
   ProductionFlowStrip,
   ProductionPanel,
+  RoomModeBanner,
+  RoomTwinPanel,
+  SceneViewToggle,
 } from "@/components/factory/ui/FactoryHUD";
 import { FactoryLoaderOverlay } from "@/components/factory/ui/FactoryLoader";
 import { useFactoryPerformance } from "@/components/factory/hooks/useFactoryPerformance";
@@ -40,13 +43,18 @@ function FactoryUI({
       <FactoryHeader />
       <ProductionFlowStrip />
 
+      <div className="pointer-events-none absolute inset-x-0 top-[4.5rem] z-20 flex justify-center px-4">
+        <RoomModeBanner />
+      </div>
+
       <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex flex-col gap-3 px-4 sm:px-5">
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <FactoryMap />
-            <ProductionPanel />
+            {state.sceneViewMode !== "room" ? <FactoryMap /> : null}
+            {state.sceneViewMode === "room" ? <RoomTwinPanel /> : <ProductionPanel />}
           </div>
           <div className="flex flex-col items-end gap-2">
+            <SceneViewToggle />
             <ControlRoomDashboard />
             <EquipmentInfoPanel />
             <AreaInfoPanel />

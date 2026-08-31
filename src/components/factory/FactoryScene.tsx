@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { FactoryAreas } from "@/components/factory/areas/FactoryAreas";
 import { FactoryDensity } from "@/components/factory/areas/FactoryDensity";
 import { AreaMarkers } from "@/components/factory/areas/AreaMarkers";
+import { RoomTwinOverlay } from "@/components/factory/areas/RoomTwinOverlay";
 import { CorridorPatrolWorkers } from "@/components/factory/areas/CorridorPatrolWorkers";
 import { WorkerAnimationLoop } from "@/components/factory/areas/WorkerAnimationSystem";
 import {
@@ -57,12 +58,17 @@ function SceneContent({
   autoRotate: boolean;
   controlsRef: RefObject<FactoryCameraHandle | null>;
 }) {
+  const { state } = useFactory();
+  const inRoom = state.sceneViewMode === "room";
+
   return (
     <>
+      <color attach="background" args={[inRoom ? "#e8edf2" : "#eef2f6"]} />
+      <fog attach="fog" args={[inRoom ? "#e8edf2" : "#eef2f6", inRoom ? 14 : 40, inRoom ? 48 : 130]} />
       <PerspectiveCamera
         makeDefault
         position={DEFAULT_FACTORY_CAMERA.position}
-        fov={42}
+        fov={inRoom ? 50 : 42}
         near={0.5}
         far={180}
       />
@@ -71,14 +77,18 @@ function SceneContent({
       <FactoryRoomLighting />
       <FactoryReflections />
       <FactoryEnvironment />
-      <FactoryRoomShells />
+      <FactoryRoomShells
+        sceneViewMode={state.sceneViewMode}
+        roomAreaId={state.roomAreaId}
+      />
       <FactoryAreas />
       <FactoryDensity />
-      <AreaMarkers />
+      {!inRoom ? <AreaMarkers /> : null}
       <CorridorPatrolWorkers />
       <FactoryPipes />
       <FactoryPipeConnections />
       <FactoryDetails />
+      <RoomTwinOverlay />
       <FactoryCamera ref={controlsRef} autoRotate={autoRotate} />
       <CameraBridge controlsRef={controlsRef} />
     </>
