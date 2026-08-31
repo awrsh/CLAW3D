@@ -32,8 +32,13 @@ type FactoryContextValue = {
   state: FactorySimulationState;
   startProduction: () => void;
   stopProduction: () => void;
+  pauseProduction: () => void;
+  resumeProduction: () => void;
+  nextProductionStage: () => void;
+  prevProductionStage: () => void;
   selectArea: (id: FactoryAreaId | null) => void;
   selectEquipment: (id: string | null) => void;
+  selectWorker: (id: string | null) => void;
   startGuidedTour: () => void;
   stopGuidedTour: () => void;
   advanceGuidedTour: () => void;
@@ -54,6 +59,8 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
   );
   const flyHandlerRef = useRef<((id: FactoryAreaId, mode?: CameraViewMode) => void) | null>(null);
   const simTimerRef = useRef<number | null>(null);
+  const stageIndexRef = useRef(0);
+  const pausedRef = useRef(false);
 
   const registerFlyHandler = useCallback((handler: (id: FactoryAreaId, mode?: CameraViewMode) => void) => {
     flyHandlerRef.current = handler;
@@ -63,6 +70,47 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
     flyHandlerRef.current?.(id, mode);
     setState((s) => ({ ...s, selectedAreaId: id }));
   }, []);
+
+  const applyStageIndex = useCallback((index: number, fly = true) => {
+    const clamped = Math.max(0, Math.min(index, PRODUCTION_STAGES.length - 1));
+    stageIndexRef.current = clamped;
+    const stage = PRODUCTION_STAGES[clamped];
+    const area = stageToArea(stage);
+    setState((s) => ({
+      ...s,
+      productionStage: stage,
+      overallProgress: Math.round(((clamped + 1) / PRODUCTION_STAGES.length) * 100),
+      activeAreaId: area,
+      isSimulating: true,
+    }));
+    if (area && fly) flyHandlerRef.current?.(area, "overview");
+  }, []);
+
+  const clearSimTimer = useCallback(() => {
+    if (simTimerRef.current) window.clearInterval(simTimerRef.current);
+    simTimerRef.current = null;
+  }, []);
+
+  const startSimTimer = useCallback(() => {
+    clearSimTimer();
+    simTimerRef.current = window.setInterval(() => {
+      const next = stageIndexRef.current + 1;
+      if (next >= PRODUCTION_STAGES.length) {
+        clearSimTimer();
+        setState((s) => ({
+          ...s,
+          isSimulating: false,
+          productionStage: "finished",
+          overallProgress: 100,
+          activeAreaId: "finished-goods",
+          productionPaused: false,
+        }));
+        flyHandlerRef.current?.("finished-goods", "overview");
+        return;
+      }
+      applyStageIndex(next);
+    }, STAGE_DURATION_MS);
+  }, [applyStageIndex, clearSimTimer]);
 
   const selectArea = useCallback((id: FactoryAreaId | null) => {
     setState((s) => {
@@ -75,6 +123,7 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
         ...s,
         selectedAreaId: id,
         selectedEquipmentId: null,
+        selectedWorkerId: null,
         ...(id && s.sceneViewMode === "room" ? { roomAreaId: id } : {}),
       };
     });
@@ -87,6 +136,7 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
       roomAreaId: id,
       selectedAreaId: id,
       selectedEquipmentId: null,
+      selectedWorkerId: null,
       guidedTourActive: false,
     }));
     flyHandlerRef.current?.(id, "room-interior");
@@ -118,61 +168,65 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const selectEquipment = useCallback((id: string | null) => {
-    setState((s) => ({ ...s, selectedEquipmentId: id }));
+    setState((s) => ({ ...s, selectedEquipmentId: id, selectedWorkerId: null }));
+  }, []);
+
+  const selectWorker = useCallback((id: string | null) => {
+    setState((s) => ({ ...s, selectedWorkerId: id, selectedEquipmentId: null }));
   }, []);
 
   const stopProduction = useCallback(() => {
-    if (simTimerRef.current) window.clearInterval(simTimerRef.current);
-    simTimerRef.current = null;
+    clearSimTimer();
+    stageIndexRef.current = 0;
     setState((s) => ({
       ...s,
       isSimulating: false,
       productionStage: "idle",
       overallProgress: 0,
       activeAreaId: null,
+      productionPaused: false,
     }));
-  }, []);
+  }, [clearSimTimer]);
 
   const startProduction = useCallback(() => {
     stopProduction();
+    pausedRef.current = false;
     setState((s) => ({
       ...s,
-      isSimulating: true,
-      productionStage: PRODUCTION_STAGES[0],
-      overallProgress: 5,
-      activeAreaId: stageToArea(PRODUCTION_STAGES[0]),
       sceneViewMode: "facility",
       roomAreaId: null,
+      productionPaused: false,
     }));
-    flyHandlerRef.current?.(stageToArea(PRODUCTION_STAGES[0])!, "overview");
+    applyStageIndex(0);
+    startSimTimer();
+  }, [stopProduction, applyStageIndex, startSimTimer]);
 
-    let index = 0;
-    simTimerRef.current = window.setInterval(() => {
-      index += 1;
-      if (index >= PRODUCTION_STAGES.length) {
-        if (simTimerRef.current) window.clearInterval(simTimerRef.current);
-        simTimerRef.current = null;
-        setState((s) => ({
-          ...s,
-          isSimulating: false,
-          productionStage: "finished",
-          overallProgress: 100,
-          activeAreaId: "finished-goods",
-        }));
-        flyHandlerRef.current?.("finished-goods", "overview");
-        return;
-      }
-      const stage = PRODUCTION_STAGES[index];
-      const area = stageToArea(stage);
-      setState((s) => ({
-        ...s,
-        productionStage: stage,
-        overallProgress: Math.round(((index + 1) / PRODUCTION_STAGES.length) * 100),
-        activeAreaId: area,
-      }));
-      if (area) flyHandlerRef.current?.(area, "overview");
-    }, STAGE_DURATION_MS);
-  }, [stopProduction]);
+  const pauseProduction = useCallback(() => {
+    clearSimTimer();
+    pausedRef.current = true;
+    setState((s) => ({ ...s, productionPaused: true }));
+  }, [clearSimTimer]);
+
+  const resumeProduction = useCallback(() => {
+    pausedRef.current = false;
+    setState((s) => {
+      if (!s.isSimulating) return s;
+      return { ...s, productionPaused: false };
+    });
+    startSimTimer();
+  }, [startSimTimer]);
+
+  const nextProductionStage = useCallback(() => {
+    const next = Math.min(stageIndexRef.current + 1, PRODUCTION_STAGES.length - 1);
+    applyStageIndex(next);
+    if (!pausedRef.current) startSimTimer();
+  }, [applyStageIndex, startSimTimer]);
+
+  const prevProductionStage = useCallback(() => {
+    const prev = Math.max(stageIndexRef.current - 1, 0);
+    applyStageIndex(prev);
+    if (!pausedRef.current) startSimTimer();
+  }, [applyStageIndex, startSimTimer]);
 
   const startGuidedTour = useCallback(() => {
     stopProduction();
@@ -215,9 +269,7 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, introComplete: value }));
   }, []);
 
-  useEffect(() => () => {
-    if (simTimerRef.current) window.clearInterval(simTimerRef.current);
-  }, []);
+  useEffect(() => () => clearSimTimer(), [clearSimTimer]);
 
   useEffect(() => {
     if (!state.guidedTourActive) return;
@@ -230,8 +282,13 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
       state,
       startProduction,
       stopProduction,
+      pauseProduction,
+      resumeProduction,
+      nextProductionStage,
+      prevProductionStage,
       selectArea,
       selectEquipment,
+      selectWorker,
       startGuidedTour,
       stopGuidedTour,
       advanceGuidedTour,
@@ -246,8 +303,13 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
       state,
       startProduction,
       stopProduction,
+      pauseProduction,
+      resumeProduction,
+      nextProductionStage,
+      prevProductionStage,
       selectArea,
       selectEquipment,
+      selectWorker,
       startGuidedTour,
       stopGuidedTour,
       advanceGuidedTour,

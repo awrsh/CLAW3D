@@ -111,6 +111,8 @@ export type FactorySimulationState = {
   /** Facility overview (dollhouse) vs immersive single-room digital twin */
   sceneViewMode: SceneViewMode;
   roomAreaId: FactoryAreaId | null;
+  productionPaused: boolean;
+  selectedWorkerId: string | null;
 };
 
 export const PRODUCTION_STAGES: ProductionStage[] = [
@@ -172,5 +174,7 @@ export function createInitialSimulationState(): FactorySimulationState {
     introComplete: false,
     sceneViewMode: "facility",
     roomAreaId: null,
+    productionPaused: false,
+    selectedWorkerId: null,
   };
 }

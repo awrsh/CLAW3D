@@ -8,6 +8,7 @@ import { FactoryAreas } from "@/components/factory/areas/FactoryAreas";
 import { FactoryDensity } from "@/components/factory/areas/FactoryDensity";
 import { AreaMarkers } from "@/components/factory/areas/AreaMarkers";
 import { RoomTwinOverlay } from "@/components/factory/areas/RoomTwinOverlay";
+import { RoomAreaWorkers } from "@/components/factory/areas/RoomAreaWorkers";
 import { CorridorPatrolWorkers } from "@/components/factory/areas/CorridorPatrolWorkers";
 import { WorkerAnimationLoop } from "@/components/factory/areas/WorkerAnimationSystem";
 import {
@@ -80,10 +81,13 @@ function SceneContent({
       <FactoryRoomShells
         sceneViewMode={state.sceneViewMode}
         roomAreaId={state.roomAreaId}
+        activeAreaId={state.activeAreaId}
+        isSimulating={state.isSimulating}
       />
       <FactoryAreas />
       <FactoryDensity />
       {!inRoom ? <AreaMarkers /> : null}
+      <RoomAreaWorkers />
       <CorridorPatrolWorkers />
       <FactoryPipes />
       <FactoryPipeConnections />

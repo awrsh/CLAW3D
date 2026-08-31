@@ -29,6 +29,7 @@ import {
 } from "@/components/factory/equipment/WarehouseRacking";
 import { ControlScreen, StatusLed } from "@/components/factory/equipment/shared";
 import { useDepartmentActive } from "@/components/factory/areas/useDepartmentActive";
+import { useSimulationAreaScale } from "@/components/factory/areas/useSimulationAreaScale";
 
 function pick(id: string) {
   return FACTORY_ASSET_MAP[id];
@@ -36,9 +37,10 @@ function pick(id: string) {
 
 export const RawMaterialsArea = memo(function RawMaterialsArea() {
   const { active, selectEquipment } = useDepartmentActive("raw-materials");
+  const scale = useSimulationAreaScale("raw-materials");
   const click = (id: string) => () => selectEquipment(id);
   return (
-    <group position={[-48, 0, 0]}>
+    <group position={[-48, 0, 0]} scale={scale}>
       <WarehouseRackingProxy position={[-3, 0, -2]} bays={3} />
       <FactoryGlbEquipment
         modelPath={pick("ibc-01").path}
@@ -75,8 +77,9 @@ export const RawMaterialsArea = memo(function RawMaterialsArea() {
 
 export const WeighingArea = memo(function WeighingArea() {
   const { active, selectEquipment } = useDepartmentActive("weighing");
+  const scale = useSimulationAreaScale("weighing");
   return (
-    <group position={[-32, 0, 0]}>
+    <group position={[-32, 0, 0]} scale={scale}>
       <WeighingStationProxy
         position={[0, 0, 0]}
         active={active}
@@ -90,8 +93,9 @@ export const WeighingArea = memo(function WeighingArea() {
 
 export const PreparationArea = memo(function PreparationArea() {
   const { active, selectEquipment } = useDepartmentActive("preparation");
+  const scale = useSimulationAreaScale("preparation");
   return (
-    <group position={[-16, 0, 0]}>
+    <group position={[-16, 0, 0]} scale={scale}>
       <FactoryGlbEquipment
         modelPath={pick("mixer-01").path}
         proxy={SingleUseMixerProxy}
@@ -116,8 +120,9 @@ export const PreparationArea = memo(function PreparationArea() {
 
 export const UpstreamArea = memo(function UpstreamArea() {
   const { active, selectEquipment } = useDepartmentActive("bioreactor");
+  const scale = useSimulationAreaScale("bioreactor");
   return (
-    <group position={[0, 0, 0]}>
+    <group position={[0, 0, 0]} scale={scale}>
       <FactoryGlbEquipment
         modelPath={pick("bioreactor-01").path}
         proxy={BioreactorProxy}
@@ -145,8 +150,9 @@ export const UpstreamArea = memo(function UpstreamArea() {
 
 export const DownstreamArea = memo(function DownstreamArea() {
   const { active, selectEquipment } = useDepartmentActive("downstream");
+  const scale = useSimulationAreaScale("downstream");
   return (
-    <group position={[16, 0, 0]}>
+    <group position={[16, 0, 0]} scale={scale}>
       <FactoryGlbEquipment
         modelPath={pick("filtration-skid-01").path}
         proxy={FiltrationSkidProxy}
@@ -176,8 +182,9 @@ export const DownstreamArea = memo(function DownstreamArea() {
 
 export const PurificationArea = memo(function PurificationArea() {
   const { active, selectEquipment } = useDepartmentActive("purification");
+  const scale = useSimulationAreaScale("purification");
   return (
-    <group position={[32, 0, 0]}>
+    <group position={[32, 0, 0]} scale={scale}>
       <FactoryGlbEquipment
         modelPath={pick("hplc-01").path}
         proxy={ChromatographyProxy}
@@ -195,8 +202,9 @@ export const PurificationArea = memo(function PurificationArea() {
 
 export const FormulationArea = memo(function FormulationArea() {
   const { active, selectEquipment } = useDepartmentActive("formulation");
+  const scale = useSimulationAreaScale("formulation");
   return (
-    <group position={[48, 0, 0]}>
+    <group position={[48, 0, 0]} scale={scale}>
       <FactoryGlbEquipment
         modelPath={pick("form-tank-01").path}
         proxy={StainlessTankProxy}
@@ -212,8 +220,9 @@ export const FormulationArea = memo(function FormulationArea() {
 
 export const FillingArea = memo(function FillingArea() {
   const { active, selectEquipment } = useDepartmentActive("filling");
+  const scale = useSimulationAreaScale("filling");
   return (
-    <group position={[0, 0, -16]}>
+    <group position={[0, 0, -16]} scale={scale}>
       <FactoryGlbEquipment
         modelPath={pick("filler-01").path}
         proxy={FillingMachineProxy}
@@ -229,8 +238,9 @@ export const FillingArea = memo(function FillingArea() {
 
 export const QualityControlArea = memo(function QualityControlArea() {
   const { active, selectEquipment } = useDepartmentActive("quality-control");
+  const scale = useSimulationAreaScale("quality-control");
   return (
-    <group position={[16, 0, -16]}>
+    <group position={[16, 0, -16]} scale={scale}>
       <FactoryGlbEquipment
         modelPath={pick("microscope-01").path}
         proxy={MicroscopeProxy}
@@ -259,8 +269,9 @@ export const QualityControlArea = memo(function QualityControlArea() {
 
 export const PackagingArea = memo(function PackagingArea() {
   const { active, selectEquipment } = useDepartmentActive("packaging");
+  const scale = useSimulationAreaScale("packaging");
   return (
-    <group position={[32, 0, -16]}>
+    <group position={[32, 0, -16]} scale={scale}>
       <FactoryGlbEquipment
         modelPath={null}
         proxy={PackagingLineProxy}
@@ -274,8 +285,9 @@ export const PackagingArea = memo(function PackagingArea() {
 
 export const FinishedGoodsArea = memo(function FinishedGoodsArea() {
   const { active } = useDepartmentActive("finished-goods");
+  const scale = useSimulationAreaScale("finished-goods");
   return (
-    <group position={[48, 0, -16]}>
+    <group position={[48, 0, -16]} scale={scale}>
       <WarehouseRackingProxy position={[0, 0, 0]} bays={3} withPallets />
       <StatusLed position={[-5, 2.5, 4]} active={active} />
     </group>

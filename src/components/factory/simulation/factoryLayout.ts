@@ -84,7 +84,7 @@ export function getAreaCameraView(
   // South wing (cz < -4) opens north; all others open south toward corridor
   const opensNorth = getAreaOpenSide(area) === "north";
   const openEdgeZ = opensNorth ? cz - hd : cz + hd;
-  const margin = mode === "overview" ? 18 : 10;
+  const margin = mode === "overview" ? 12 : 10;
   const camZ = opensNorth ? openEdgeZ - margin : openEdgeZ + margin;
   const camY = mode === "overview" ? 34 : 18;
 

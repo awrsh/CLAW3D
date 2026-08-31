@@ -168,14 +168,6 @@ function RoomShell({
         </group>
       )}
 
-      {/* Ceiling — full room only */}
-      {isFull ? (
-        <mesh position={[0, height - 0.06, 0]} receiveShadow>
-          <boxGeometry args={[w - 0.2, 0.12, d - 0.2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.92} emissive="#ffffff" emissiveIntensity={0.06} />
-        </mesh>
-      ) : null}
-
       {/* Corner posts */}
       {[
         [-hw, backZ],
@@ -274,9 +266,13 @@ export const FactoryEnvironment = memo(function FactoryEnvironment() {
 export const FactoryRoomShells = memo(function FactoryRoomShells({
   sceneViewMode = "facility",
   roomAreaId = null,
+  activeAreaId = null,
+  isSimulating = false,
 }: {
   sceneViewMode?: SceneViewMode;
   roomAreaId?: FactoryAreaId | null;
+  activeAreaId?: FactoryAreaId | null;
+  isSimulating?: boolean;
 }) {
   return (
     <group>
@@ -285,14 +281,20 @@ export const FactoryRoomShells = memo(function FactoryRoomShells({
         if (sceneViewMode === "room") {
           variant = area.id === roomAreaId ? "full" : "ghost";
         }
+        const boosted =
+          isSimulating && activeAreaId === area.id && sceneViewMode === "facility";
+        const scale = boosted ? 1.14 : 1;
+        const [cx, , cz] = area.center;
+
         return (
-          <RoomShell
-            key={area.id}
-            center={area.center}
-            size={area.size}
-            openSide={getAreaOpenSide(area)}
-            variant={variant}
-          />
+          <group key={area.id} position={[cx, 0, cz]} scale={scale}>
+            <RoomShell
+              center={[0, 0, 0]}
+              size={area.size}
+              openSide={getAreaOpenSide(area)}
+              variant={variant}
+            />
+          </group>
         );
       })}
     </group>

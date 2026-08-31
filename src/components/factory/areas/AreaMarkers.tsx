@@ -55,7 +55,13 @@ function AreaRoomMarker({
       </mesh>
 
       {workers.map((worker) => (
-        <FactoryWorker key={worker.id} worker={worker} showActivity areaSize={size} />
+        <FactoryWorker
+          key={worker.id}
+          worker={worker}
+          showActivity
+          areaSize={size}
+          areaId={areaId}
+        />
       ))}
 
       <Html

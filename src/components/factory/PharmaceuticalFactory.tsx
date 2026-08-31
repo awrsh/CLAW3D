@@ -6,16 +6,13 @@ import { FactoryProvider, useFactory } from "@/components/factory/context/Factor
 import type { FactoryCameraHandle } from "@/components/factory/FactoryCamera";
 import {
   AreaInfoPanel,
-  ControlRoomDashboard,
   EquipmentInfoPanel,
   FactoryControls,
   FactoryHeader,
-  FactoryMap,
-  ProductionFlowStrip,
-  ProductionPanel,
   RoomModeBanner,
-  RoomTwinPanel,
   SceneViewToggle,
+  SimulationControls,
+  WorkerInfoPanel,
 } from "@/components/factory/ui/FactoryHUD";
 import { FactoryLoaderOverlay } from "@/components/factory/ui/FactoryLoader";
 import { useFactoryPerformance } from "@/components/factory/hooks/useFactoryPerformance";
@@ -31,42 +28,39 @@ function FactoryUI({
 }: {
   controlsRef: React.RefObject<FactoryCameraHandle | null>;
 }) {
-  const {
-    startGuidedTour,
-    stopGuidedTour,
-    state,
-  } = useFactory();
+  const { startGuidedTour, stopGuidedTour, state } = useFactory();
   const [autoRotate, setAutoRotate] = useState(false);
 
   return (
     <>
       <FactoryHeader />
-      <ProductionFlowStrip />
 
       <div className="pointer-events-none absolute inset-x-0 top-[4.5rem] z-20 flex justify-center px-4">
         <RoomModeBanner />
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex flex-col gap-3 px-4 sm:px-5">
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            {state.sceneViewMode !== "room" ? <FactoryMap /> : null}
-            {state.sceneViewMode === "room" ? <RoomTwinPanel /> : <ProductionPanel />}
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <SceneViewToggle />
-            <ControlRoomDashboard />
-            <EquipmentInfoPanel />
-            <AreaInfoPanel />
-            <FactoryControls
-              autoRotate={autoRotate}
-              onToggleRotate={() => setAutoRotate((v) => !v)}
-              onResetView={() => controlsRef.current?.resetView()}
-              onStartTour={startGuidedTour}
-              onStopTour={stopGuidedTour}
-              tourActive={state.guidedTourActive}
-            />
-          </div>
+      {/* Bottom-center simulation controls */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex justify-center px-4">
+        <SimulationControls />
+      </div>
+
+      {/* Minimal corner controls + contextual dialogs */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-between px-4 sm:px-5">
+        <div className="pointer-events-auto self-end">
+          <SceneViewToggle />
+        </div>
+        <div className="pointer-events-auto flex flex-col items-end gap-2">
+          <WorkerInfoPanel />
+          <EquipmentInfoPanel />
+          <AreaInfoPanel />
+          <FactoryControls
+            autoRotate={autoRotate}
+            onToggleRotate={() => setAutoRotate((v) => !v)}
+            onResetView={() => controlsRef.current?.resetView()}
+            onStartTour={startGuidedTour}
+            onStopTour={stopGuidedTour}
+            tourActive={state.guidedTourActive}
+          />
         </div>
       </div>
     </>

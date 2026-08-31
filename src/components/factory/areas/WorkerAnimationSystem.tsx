@@ -12,11 +12,13 @@ export type WorkerAnimBinding = {
   rightArmRef: RefObject<THREE.Group | null>;
   leftLegRef: RefObject<THREE.Group | null>;
   rightLegRef: RefObject<THREE.Group | null>;
-  startPos: THREE.Vector3;
-  endPos: THREE.Vector3;
+  /** Area-local waypoints (includes Y=0); empty = static */
+  waypoints: THREE.Vector3[];
   speed: number;
   baseYaw: number;
   walking: boolean;
+  /** World offset applied to waypoints */
+  areaOffset: THREE.Vector3;
 };
 
 const bindings = new Map<string, WorkerAnimBinding>();
@@ -29,14 +31,21 @@ export function unregisterWorkerAnimation(id: string) {
   bindings.delete(id);
 }
 
-/** Single animation tick for every worker — avoids N separate useFrame subscriptions. */
-export function WorkerAnimationLoop() {
-  const dir = useRef(new THREE.Vector3());
+function yawToward(from: THREE.Vector3, to: THREE.Vector3, baseYaw: number) {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  if (dx * dx + dz * dz < 0.0004) return baseYaw;
+  return Math.atan2(dx, dz) + baseYaw;
+}
 
-  useFrame(({ clock }) => {
+/** Single animation tick for every worker — nav-mesh waypoints, no object clipping. */
+export function WorkerAnimationLoop() {
+  const progress = useRef(new Map<string, { seg: number; t: number }>());
+
+  useFrame((state, delta) => {
     if (bindings.size === 0) return;
 
-    const t = clock.elapsedTime;
+    const elapsed = state.clock.elapsedTime;
 
     for (const entry of bindings.values()) {
       const {
@@ -46,26 +55,45 @@ export function WorkerAnimationLoop() {
         rightArmRef,
         leftLegRef,
         rightLegRef,
-        startPos,
-        endPos,
+        waypoints,
         speed,
         baseYaw,
         walking,
+        areaOffset,
       } = entry;
 
-      if (walking && rootRef.current) {
-        const phase = (Math.sin(t * speed) + 1) * 0.5;
-        rootRef.current.position.lerpVectors(startPos, endPos, phase);
+      if (!rootRef.current) continue;
 
-        const movingToEnd = Math.cos(t * speed) >= 0;
-        dir.current.copy(endPos).sub(startPos);
-        if (dir.current.lengthSq() > 0.001) {
-          const yaw =
-            Math.atan2(movingToEnd ? dir.current.x : -dir.current.x, movingToEnd ? dir.current.z : -dir.current.z) + baseYaw;
-          rootRef.current.rotation.y = THREE.MathUtils.lerp(rootRef.current.rotation.y, yaw, 0.12);
+      if (walking && waypoints.length >= 2) {
+        let state = progress.current.get(entry.id);
+        if (!state) {
+          state = { seg: 0, t: 0 };
+          progress.current.set(entry.id, state);
         }
 
-        const walkCycle = t * speed * 2.2;
+        const a = waypoints[state.seg]!;
+        const b = waypoints[(state.seg + 1) % waypoints.length]!;
+        const from = a.clone().add(areaOffset);
+        const to = b.clone().add(areaOffset);
+
+        const segLen = from.distanceTo(to);
+        const step = speed * delta;
+        state.t += segLen > 0.01 ? step / segLen : 1;
+
+        if (state.t >= 1) {
+          state.t = 0;
+          state.seg = (state.seg + 1) % waypoints.length;
+        }
+
+        rootRef.current.position.lerpVectors(from, to, state.t);
+        const targetYaw = yawToward(from, to, 0);
+        rootRef.current.rotation.y = THREE.MathUtils.lerp(
+          rootRef.current.rotation.y,
+          targetYaw + baseYaw,
+          0.14,
+        );
+
+        const walkCycle = elapsed * speed * 2.2;
         const legSwing = Math.sin(walkCycle) * 0.42;
         if (leftLegRef.current) leftLegRef.current.rotation.x = legSwing;
         if (rightLegRef.current) rightLegRef.current.rotation.x = -legSwing;
@@ -79,6 +107,7 @@ export function WorkerAnimationLoop() {
           rightArmRef.current.rotation.z = -Math.PI / 2 - Math.sin(walkCycle) * 0.08;
         }
       } else {
+        progress.current.delete(entry.id);
         if (leftArmRef.current) leftArmRef.current.rotation.z = Math.PI / 2;
         if (rightArmRef.current) rightArmRef.current.rotation.z = -Math.PI / 2;
         if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
@@ -92,9 +121,6 @@ export function WorkerAnimationLoop() {
 }
 
 export function useWorkerAnimationBinding(binding: WorkerAnimBinding) {
-  useEffect(() => {
-    return () => unregisterWorkerAnimation(binding.id);
-  }, [binding.id]);
-
   registerWorkerAnimation(binding);
+  useEffect(() => () => unregisterWorkerAnimation(binding.id), [binding.id]);
 }
