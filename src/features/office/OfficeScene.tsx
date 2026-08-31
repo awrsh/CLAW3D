@@ -9,6 +9,7 @@ import {
   CAMERA_ZOOM,
   getActiveFloor,
   getFloorWorldY,
+  PERFORMANCE_PROFILES,
   type BuildingConfig,
   type LightingMode,
 } from "@/features/office/core/roomConfig";
@@ -18,6 +19,7 @@ import { FloorConnectors } from "@/features/office/scene/FloorConnectors";
 import { CameraWasdControls } from "@/features/office/scene/CameraWasdControls";
 import { ObjectDragController } from "@/features/office/scene/ObjectDragController";
 import { OfficeLevel } from "@/features/office/scene/OfficeLevel";
+import { wallDetailForPerformance } from "@/features/office/scene/FlutedWallPanel";
 import type {
   AgentFocusRequest,
   ForcedChatRequest,
@@ -187,19 +189,25 @@ export function OfficeScene({
   const showConnectors =
     building.showAllFloors && building.floors.length > 1;
 
+  const perf =
+    PERFORMANCE_PROFILES[building.performanceMode] ??
+    PERFORMANCE_PROFILES.balanced;
+  const wallDetail = wallDetailForPerformance(building.performanceMode);
+
   return (
     <Canvas
+      key={building.performanceMode}
       orthographic
-      dpr={[1, 1.25]}
+      dpr={perf.dpr}
       camera={{
         position: cameraPosition,
         zoom: CAMERA_ZOOM,
         near: 0.1,
         far: 400,
       }}
-      shadows={{ type: THREE.PCFShadowMap }}
+      shadows={perf.shadows ? { type: THREE.PCFShadowMap } : false}
       gl={{
-        antialias: true,
+        antialias: perf.antialias,
         powerPreference: "default",
         failIfMajorPerformanceCaveat: false,
         alpha: false,
@@ -288,8 +296,8 @@ export function OfficeScene({
         position={[8, 14 + activeY, 6]}
         intensity={lighting.sun.intensity}
         color={lighting.sun.color}
-        castShadow
-        shadow-mapSize={[512, 512]}
+        castShadow={perf.shadows}
+        shadow-mapSize={[perf.shadowMapSize, perf.shadowMapSize]}
         shadow-bias={-0.0002}
         shadow-normalBias={0.02}
       />
@@ -336,6 +344,7 @@ export function OfficeScene({
                   }
                 : undefined
             }
+            wallDetail={wallDetail}
           />
         );
       })}

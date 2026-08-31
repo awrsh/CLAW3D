@@ -2,62 +2,26 @@
 
 import { memo } from "react";
 import type { FloorConfig } from "@/features/office/core/roomConfig";
+import { WallRun, wallDetailForPerformance } from "@/features/office/scene/FlutedWallPanel";
 
 type OfficeWallsProps = {
   config: Pick<
     FloorConfig,
     "width" | "depth" | "wallHeight" | "wallThickness" | "wallColor"
   >;
+  wallDetail?: ReturnType<typeof wallDetailForPerformance>;
 };
 
-function WallFace({
-  position,
-  size,
-  color,
-}: {
-  position: [number, number, number];
-  size: [number, number, number];
-  color: string;
-}) {
-  const [w, h, t] = size;
-  const [x, y, z] = position;
-  const skim = 0.004;
-
-  return (
-    <group position={[x, y, z]}>
-      {/* Main plaster */}
-      <mesh castShadow receiveShadow>
-        <boxGeometry args={[w, h, t]} />
-        <meshStandardMaterial
-          color={color}
-          roughness={0.72}
-          metalness={0.04}
-        />
-      </mesh>
-      {/* Soft highlight skim coat */}
-      <mesh position={[0, 0, t / 2 + skim]} receiveShadow>
-        <planeGeometry args={[Math.max(0.01, w - 0.08), Math.max(0.01, h - 0.12)]} />
-        <meshStandardMaterial
-          color="#ffffff"
-          transparent
-          opacity={0.06}
-          roughness={0.9}
-          metalness={0}
-          depthWrite={false}
-        />
-      </mesh>
-    </group>
-  );
-}
-
 /**
- * Modern perimeter walls: cool plaster, slim aluminum skirting + crown.
+ * Perimeter walls — minimalist fluted panel tiles (GLB).
  */
-export const OfficeWalls = memo(function OfficeWalls({ config }: OfficeWallsProps) {
+export const OfficeWalls = memo(function OfficeWalls({
+  config,
+  wallDetail = "simple",
+}: OfficeWallsProps) {
   const { width, depth, wallHeight, wallThickness, wallColor } = config;
   const halfW = width / 2;
   const halfD = depth / 2;
-  const wallY = wallHeight / 2;
   const skirtH = Math.min(0.08, wallHeight * 0.1);
   const crownH = Math.min(0.05, wallHeight * 0.06);
   const trimD = Math.min(0.035, wallThickness * 0.55);
@@ -66,26 +30,46 @@ export const OfficeWalls = memo(function OfficeWalls({ config }: OfficeWallsProp
 
   return (
     <group>
-      <WallFace
-        position={[0, wallY, -halfD]}
-        size={[width, wallHeight, wallThickness]}
-        color={wallColor}
-      />
-      <WallFace
-        position={[0, wallY, halfD]}
-        size={[width, wallHeight, wallThickness]}
-        color={wallColor}
-      />
-      <WallFace
-        position={[-halfW, wallY, 0]}
-        size={[wallThickness, wallHeight, depth]}
-        color={wallColor}
-      />
-      <WallFace
-        position={[halfW, wallY, 0]}
-        size={[wallThickness, wallHeight, depth]}
-        color={wallColor}
-      />
+      <group position={[0, 0, -halfD]}>
+        <WallRun
+          span={width}
+          height={wallHeight}
+          depth={wallThickness}
+          color={wallColor}
+          axis="x"
+          detail={wallDetail}
+        />
+      </group>
+      <group position={[0, 0, halfD]}>
+        <WallRun
+          span={width}
+          height={wallHeight}
+          depth={wallThickness}
+          color={wallColor}
+          axis="x"
+          detail={wallDetail}
+        />
+      </group>
+      <group position={[-halfW, 0, 0]}>
+        <WallRun
+          span={depth}
+          height={wallHeight}
+          depth={wallThickness}
+          color={wallColor}
+          axis="z"
+          detail={wallDetail}
+        />
+      </group>
+      <group position={[halfW, 0, 0]}>
+        <WallRun
+          span={depth}
+          height={wallHeight}
+          depth={wallThickness}
+          color={wallColor}
+          axis="z"
+          detail={wallDetail}
+        />
+      </group>
 
       {/* Aluminum skirting */}
       {(

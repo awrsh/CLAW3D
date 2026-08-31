@@ -26,6 +26,7 @@ import {
   getSelectedObject,
   isDrawWallType,
   MAX_FLOORS,
+  PERFORMANCE_MODE_OPTIONS,
   ROOM_LIMITS,
   type BuildingConfig,
   type FloorConfig,
@@ -36,6 +37,7 @@ import {
   ColorField,
   EmptyHint,
   GhostButton,
+  AnimatedPanel,
   PanelShell,
   SectionLabel,
   SegmentedControl,
@@ -56,11 +58,11 @@ type RoomToolsPanelProps = {
 
 type ToolsTab = "place" | "edit" | "space" | "build";
 
-const TOOLS_TABS: Array<{ value: ToolsTab; label: string }> = [
-  { value: "place", label: "جایگذاری" },
-  { value: "edit", label: "ویرایش" },
-  { value: "space", label: "فضا" },
-  { value: "build", label: "ساختمان" },
+const TOOLS_TABS: Array<{ value: ToolsTab; label: string; hint: string }> = [
+  { value: "place", label: "جایگذاری", hint: "افزودن شیء" },
+  { value: "edit", label: "ویرایش", hint: "جابه‌جایی و تنظیم" },
+  { value: "space", label: "فضا", hint: "واحد و رنگ" },
+  { value: "build", label: "ساختمان", hint: "طبقات و ساختار" },
 ];
 
 /**
@@ -402,8 +404,6 @@ export function RoomToolsPanel({
     });
   };
 
-  if (!open) return null;
-
   const subtitle =
     building.drawMode === "wall"
       ? `رسم دیوار · ${getObjectLabel(building.drawWallType)}`
@@ -412,10 +412,15 @@ export function RoomToolsPanel({
         : active.label;
 
   return (
-    <PanelShell
-      title="ابزارها"
-      subtitle={subtitle}
-      className="absolute bottom-4 left-4 z-20 max-h-[min(86vh,820px)] w-[min(100%-2rem,360px)]"
+    <AnimatedPanel
+      open={open}
+      variant="slide-right"
+      className="absolute top-[4.5rem] bottom-4 right-4 z-20 w-[min(100%-2rem,420px)]"
+    >
+      <PanelShell
+        title="ابزارها"
+        subtitle={subtitle}
+        className="h-full max-h-full"
       actions={
         <>
           <GhostButton onClick={onReset} title="بازنشانی ساختمان">
@@ -431,11 +436,32 @@ export function RoomToolsPanel({
       bodyClassName="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3"
       footer={
         building.editMode
-          ? "ویرایش فعال است · برای جابه‌جایی کلیک کنید و بکشید (نه لمس تصادفی)."
-          : "حالت مشاهده · از نوار بالا «ویرایش» را روشن کنید."
+          ? "ویرایش فعال · کلیک + درگ برای جابه‌جایی · Ctrl+Z برای Undo"
+          : "حالت مشاهده · «ویرایش» را از نوار بالا روشن کنید."
       }
     >
-      <SegmentedControl value={tab} options={TOOLS_TABS} onChange={setTab} />
+      <SegmentedControl
+        value={tab}
+        options={TOOLS_TABS.map(({ value, label, hint }) => ({
+          value,
+          label,
+          title: hint,
+        }))}
+        onChange={setTab}
+      />
+
+      {selected && tab !== "edit" ? (
+        <button
+          type="button"
+          onClick={() => setTab("edit")}
+          className={`${studioSurfaceClass} flex w-full items-center justify-between gap-2 px-2.5 py-2 text-right transition hover:border-amber-500/35`}
+        >
+          <span className="text-[10px] text-amber-500/70">انتخاب فعال</span>
+          <span className="truncate text-[11px] font-medium text-amber-100">
+            {getObjectLabel(selected.type)}
+          </span>
+        </button>
+      ) : null}
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
         {tab === "place" ? (
@@ -602,6 +628,7 @@ export function RoomToolsPanel({
                     onChange={(value) => updateSelectedObject("length", value)}
                   />
                 ) : null}
+                <div className="grid grid-cols-2 gap-2">
                 <SliderField
                   label="موقعیت X"
                   value={selected.x}
@@ -639,6 +666,7 @@ export function RoomToolsPanel({
                   onEditStart={onBeforeObjectEdit}
                   onChange={(value) => updateSelectedObject("scale", value)}
                 />
+                </div>
               </div>
             ) : (
               <EmptyHint>
@@ -954,6 +982,13 @@ export function RoomToolsPanel({
                 checked={building.muteSfx}
                 onChange={(checked) => patchBuilding({ muteSfx: checked })}
               />
+              <SectionLabel>کیفیت رندر</SectionLabel>
+              <SegmentedControl
+                size="sm"
+                value={building.performanceMode}
+                onChange={(mode) => patchBuilding({ performanceMode: mode })}
+                options={PERFORMANCE_MODE_OPTIONS}
+              />
             </section>
 
             <section className="space-y-2">
@@ -1063,5 +1098,6 @@ export function RoomToolsPanel({
         ) : null}
       </div>
     </PanelShell>
+    </AnimatedPanel>
   );
 }

@@ -2,7 +2,7 @@
 
 import { Billboard } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { OfficeAgent } from "@/features/office/core/agents";
 import {
@@ -11,11 +11,15 @@ import {
 } from "@/features/office/core/agentLooks";
 import { wrapCanvasText } from "@/features/office/core/speechUi";
 
+import type { ProfessionalActivity } from "@/features/office/core/agentBehavior";
+
 type SpeechPhase = "idle" | "thinking" | "typing" | "holding";
 
 type LiveAgent = OfficeAgent & {
   speechText?: string;
   speechPhase?: SpeechPhase;
+  activity?: ProfessionalActivity | null;
+  chatPartnerId?: string | null;
 };
 
 type OfficeAgentModelProps = {
@@ -27,16 +31,31 @@ type OfficeAgentModelProps = {
 
 const STATE_SUBTITLE: Record<OfficeAgent["state"], string> = {
   idle: "آزاد",
-  walking: "راه رفتن",
-  working: "در حال انجام",
-  sitting: "منتظر",
-  chatting: "گفتگو",
+  walking: "در راه",
+  working: "متمرکز روی کار",
+  sitting: "استراحت کوتاه",
+  chatting: "گفتگوی حرفه‌ای",
 };
 
-function speechSubtitle(phase: SpeechPhase | undefined): string | null {
-  if (phase === "thinking") return "فکر می‌کند…";
-  if (phase === "typing") return "می‌نویسد…";
-  if (phase === "holding") return "صحبت";
+const ACTIVITY_SUBTITLE: Partial<Record<ProfessionalActivity, string>> = {
+  focus_work: "Deep work",
+  coffee_break: "استراحت · قهوه",
+  water_break: "استراحت · آب",
+  collab_spot: "بررسی بورد",
+  rest_chair: "نشسته",
+  stretch: "کشش کوتاه",
+};
+
+function speechSubtitle(
+  phase: SpeechPhase | undefined,
+  activity?: ProfessionalActivity | null,
+): string | null {
+  if (phase === "thinking") return "در حال فکر…";
+  if (phase === "typing") return "در حال نوشتن…";
+  if (phase === "holding") return "می‌گوید…";
+  if (activity && ACTIVITY_SUBTITLE[activity]) {
+    return ACTIVITY_SUBTITLE[activity]!;
+  }
   return null;
 }
 
@@ -78,8 +97,10 @@ function paintNameplate(
   accent: string,
   selected: boolean,
   phase?: SpeechPhase,
+  activity?: ProfessionalActivity | null,
 ) {
-  const subtitle = speechSubtitle(phase) ?? STATE_SUBTITLE[state];
+  const subtitle =
+    speechSubtitle(phase, activity) ?? STATE_SUBTITLE[state];
   ctx.clearRect(0, 0, width, height);
 
   ctx.fillStyle = "rgba(8, 12, 20, 0.94)";
@@ -386,6 +407,9 @@ function shadeShirt(hex: string, amount: number): string {
 /**
  * Procedural character + canvas billboard nameplate (visible under ortho camera).
  * Face features (+Z) make front/back obvious under the orthographic camera.
+ *
+ * Limbs hang on -Y. Positive rotation.x swings toward -Z (back); use negative
+ * rotation.x for forward (+Z) reaches — keyboard, walk swing, gestures.
  */
 export const OfficeAgentModel = memo(function OfficeAgentModel({
   agentId,
@@ -393,7 +417,9 @@ export const OfficeAgentModel = memo(function OfficeAgentModel({
   selected = false,
   onSelect,
 }: OfficeAgentModelProps) {
+  const [hovered, setHovered] = useState(false);
   const groupRef = useRef<THREE.Group>(null);
+  const headRef = useRef<THREE.Group>(null);
   const leftArmRef = useRef<THREE.Group>(null);
   const rightArmRef = useRef<THREE.Group>(null);
   const leftLegRef = useRef<THREE.Group>(null);
@@ -447,81 +473,155 @@ export const OfficeAgentModel = memo(function OfficeAgentModel({
     const agent = agentsRef.current.find((entry) => entry.id === agentId);
     if (!agent || !groupRef.current) return;
 
+    const t = clock.elapsedTime;
     const phase = agent.speechPhase ?? "idle";
+    const activity = agent.activity ?? null;
     const isTyping =
       agent.state === "working" ||
       phase === "typing" ||
       phase === "thinking";
     const seatY = agent.state === "sitting" ? -0.16 : 0;
+    const isBreak =
+      activity === "coffee_break" || activity === "water_break";
+    const bob =
+      agent.state === "walking"
+        ? Math.abs(Math.sin(t * 9)) * 0.035
+        : Math.sin(t * 1.2) * 0.008;
 
-    target.current.set(agent.x, seatY, agent.z);
+    target.current.set(agent.x, seatY + bob, agent.z);
     groupRef.current.position.lerp(target.current, 0.18);
 
-    let rotDelta = agent.facing - groupRef.current.rotation.y;
+    // Face conversation partner or desk direction.
+    let targetRot = agent.facing;
+    if (agent.state === "chatting" && agent.chatPartnerId) {
+      const partner = agentsRef.current.find(
+        (entry) => entry.id === agent.chatPartnerId,
+      );
+      if (partner) {
+        targetRot = Math.atan2(partner.x - agent.x, partner.z - agent.z);
+      }
+    }
+
+    let rotDelta = targetRot - groupRef.current.rotation.y;
     while (rotDelta > Math.PI) rotDelta -= Math.PI * 2;
     while (rotDelta < -Math.PI) rotDelta += Math.PI * 2;
-    groupRef.current.rotation.y += rotDelta * 0.15;
+    groupRef.current.rotation.y += rotDelta * 0.12;
 
-    const t = clock.elapsedTime;
+    // Head micro-movements.
+    if (headRef.current) {
+      if (agent.state === "chatting") {
+        headRef.current.rotation.y = Math.sin(t * 2.2) * 0.08;
+        headRef.current.rotation.x = -0.04;
+      } else if (isTyping) {
+        headRef.current.rotation.x = -0.12 + Math.sin(t * 3) * 0.03;
+        headRef.current.rotation.y = Math.sin(t * 1.5) * 0.04;
+      } else if (agent.state === "walking") {
+        headRef.current.rotation.y = Math.sin(t * 4) * 0.05;
+        headRef.current.rotation.x = 0;
+      } else if (activity === "stretch") {
+        headRef.current.rotation.x = -0.08 + Math.sin(t * 1.8) * 0.04;
+        headRef.current.rotation.y = 0;
+      } else {
+        headRef.current.rotation.x = Math.sin(t * 0.9) * 0.03;
+        headRef.current.rotation.y = Math.sin(t * 0.7 + 1) * 0.05;
+      }
+    }
 
     if (agent.state === "walking") {
       const swing = Math.sin(t * 8) * 0.55;
       if (leftArmRef.current) {
-        leftArmRef.current.rotation.x = swing;
+        leftArmRef.current.rotation.x = -swing;
         leftArmRef.current.rotation.z = 0;
       }
       if (rightArmRef.current) {
-        rightArmRef.current.rotation.x = -swing;
+        rightArmRef.current.rotation.x = swing;
         rightArmRef.current.rotation.z = 0;
       }
       if (leftLegRef.current) leftLegRef.current.rotation.x = -swing;
       if (rightLegRef.current) rightLegRef.current.rotation.x = swing;
     } else if (isTyping) {
-      // Keyboard work: arms lean forward, alternating taps.
+      // Keyboard work: arms reach forward (+Z), alternating taps.
       const tapL = Math.sin(t * 14);
       const tapR = Math.sin(t * 14 + 1.4);
       if (leftArmRef.current) {
-        leftArmRef.current.rotation.x = 1.12 + tapL * 0.14;
+        leftArmRef.current.rotation.x = -1.12 + tapL * 0.14;
         leftArmRef.current.rotation.z = 0.18;
       }
       if (rightArmRef.current) {
-        rightArmRef.current.rotation.x = 1.05 + tapR * 0.2;
+        rightArmRef.current.rotation.x = -1.05 + tapR * 0.2;
         rightArmRef.current.rotation.z = -0.16;
       }
-      if (leftLegRef.current) leftLegRef.current.rotation.x = 0.08;
-      if (rightLegRef.current) rightLegRef.current.rotation.x = 0.08;
+      if (leftLegRef.current) leftLegRef.current.rotation.x = -0.08;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = -0.08;
     } else if (agent.state === "sitting") {
       if (leftArmRef.current) {
-        leftArmRef.current.rotation.x = 0.55;
+        leftArmRef.current.rotation.x = -0.55;
         leftArmRef.current.rotation.z = 0.08;
       }
       if (rightArmRef.current) {
-        rightArmRef.current.rotation.x = 0.55;
+        rightArmRef.current.rotation.x = -0.55;
         rightArmRef.current.rotation.z = -0.08;
       }
       if (leftLegRef.current) leftLegRef.current.rotation.x = -0.95;
       if (rightLegRef.current) rightLegRef.current.rotation.x = -0.95;
+    } else if (isBreak && agent.state === "idle") {
+      const sip = Math.sin(t * 2.4);
+      if (rightArmRef.current) {
+        rightArmRef.current.rotation.x = -0.35 - Math.max(0, sip) * 0.55;
+        rightArmRef.current.rotation.z = -0.35;
+      }
+      if (leftArmRef.current) {
+        leftArmRef.current.rotation.x = -0.15;
+        leftArmRef.current.rotation.z = 0.1;
+      }
+      if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
+    } else if (activity === "stretch") {
+      const reach = Math.sin(t * 1.6) * 0.25;
+      if (leftArmRef.current) {
+        leftArmRef.current.rotation.x = -0.85 - reach;
+        leftArmRef.current.rotation.z = 0.45;
+      }
+      if (rightArmRef.current) {
+        rightArmRef.current.rotation.x = -0.85 + reach;
+        rightArmRef.current.rotation.z = -0.45;
+      }
+      if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
+    } else if (activity === "collab_spot" && agent.state === "idle") {
+      const point = Math.sin(t * 2.8) * 0.4;
+      if (rightArmRef.current) {
+        rightArmRef.current.rotation.x = -0.45 - Math.max(0, point) * 0.35;
+        rightArmRef.current.rotation.z = -0.25;
+      }
+      if (leftArmRef.current) {
+        leftArmRef.current.rotation.x = -0.3;
+        leftArmRef.current.rotation.z = 0.12;
+      }
+      if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
     } else if (agent.state === "chatting") {
       const talk = Math.sin(t * 5.5) * 0.35;
       if (leftArmRef.current) {
-        leftArmRef.current.rotation.x = 0.25;
+        leftArmRef.current.rotation.x = -0.25;
         leftArmRef.current.rotation.z = 0.05;
       }
       if (rightArmRef.current) {
-        rightArmRef.current.rotation.x = 0.7 + Math.max(0, talk);
+        rightArmRef.current.rotation.x = -0.7 - Math.max(0, talk);
         rightArmRef.current.rotation.z = -0.2;
       }
       if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
       if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
     } else {
       const idle = Math.sin(t * 1.6) * 0.05;
+      const crossed = Math.sin(t * 0.35) > 0.82;
       if (leftArmRef.current) {
-        leftArmRef.current.rotation.x = idle;
-        leftArmRef.current.rotation.z = 0;
+        leftArmRef.current.rotation.x = crossed ? -0.72 : -idle;
+        leftArmRef.current.rotation.z = crossed ? 0.28 : 0;
       }
       if (rightArmRef.current) {
-        rightArmRef.current.rotation.x = -idle;
-        rightArmRef.current.rotation.z = 0;
+        rightArmRef.current.rotation.x = crossed ? -0.68 : idle;
+        rightArmRef.current.rotation.z = crossed ? -0.28 : 0;
       }
       if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
       if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
@@ -529,7 +629,7 @@ export const OfficeAgentModel = memo(function OfficeAgentModel({
 
     if (canvas && texture) {
       const name = formatNameplate(agent.name);
-      const key = `${name}|${agent.state}|${agent.color}|${selected ? 1 : 0}|${phase}`;
+      const key = `${name}|${agent.state}|${agent.color}|${selected ? 1 : 0}|${phase}|${activity ?? ""}`;
       if (key !== plateKeyRef.current) {
         plateKeyRef.current = key;
         const ctx = canvas.getContext("2d");
@@ -543,6 +643,7 @@ export const OfficeAgentModel = memo(function OfficeAgentModel({
             agent.color,
             selected,
             phase,
+            activity,
           );
           texture.needsUpdate = true;
         }
@@ -613,21 +714,39 @@ export const OfficeAgentModel = memo(function OfficeAgentModel({
       }}
       onPointerOver={(event) => {
         event.stopPropagation();
+        setHovered(true);
         document.body.style.cursor = cursor;
       }}
       onPointerOut={() => {
+        setHovered(false);
         document.body.style.cursor = "default";
       }}
     >
-      {selected ? (
+      {selected || hovered ? (
         <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.22, 0.3, 28]} />
-          <meshBasicMaterial color="#f59e0b" transparent opacity={0.85} />
+          <ringGeometry args={[selected ? 0.22 : 0.18, selected ? 0.3 : 0.26, 28]} />
+          <meshBasicMaterial
+            color={selected ? "#f59e0b" : "#c8a97e"}
+            transparent
+            opacity={selected ? 0.88 : 0.5}
+          />
         </mesh>
       ) : (
         <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <circleGeometry args={[0.14, 16]} />
           <meshBasicMaterial color="#000" transparent opacity={0.22} />
+        </mesh>
+      )}
+
+      {(selected || hovered) && (
+        <mesh position={[0, 0.55, 0]}>
+          <boxGeometry args={[0.34, 1.12, 0.24]} />
+          <meshBasicMaterial
+            color={selected ? "#fbbf24" : "#c8a97e"}
+            wireframe
+            transparent
+            opacity={selected ? 0.65 : 0.35}
+          />
         </mesh>
       )}
 
@@ -637,7 +756,7 @@ export const OfficeAgentModel = memo(function OfficeAgentModel({
       </mesh>
       <CollarMeshes look={look} shirt={color} />
 
-      <group scale={look.headScale} position={[0, 0.9 * (1 - look.headScale) * 0.2, 0]}>
+      <group ref={headRef} scale={look.headScale} position={[0, 0.9 * (1 - look.headScale) * 0.2, 0]}>
         <mesh position={[0, 0.9, 0]} castShadow>
           <boxGeometry args={[0.24, 0.24, 0.22]} />
           <meshLambertMaterial color={look.skin} />
@@ -789,12 +908,12 @@ export const OfficeAgentModel = memo(function OfficeAgentModel({
 
       {texture ? (
         <Billboard position={[0, 1.42, 0]} follow>
-          <mesh renderOrder={20}>
+          <mesh>
             <planeGeometry args={[1.45, 0.3]} />
             <meshBasicMaterial
               map={texture}
               transparent
-              depthTest={false}
+              depthTest
               depthWrite={false}
               toneMapped={false}
             />
@@ -804,12 +923,12 @@ export const OfficeAgentModel = memo(function OfficeAgentModel({
 
       {speechTexture ? (
         <Billboard position={[0, 2.05, 0]} follow>
-          <mesh renderOrder={21}>
+          <mesh>
             <planeGeometry args={[1.85, 0.65]} />
             <meshBasicMaterial
               map={speechTexture}
               transparent
-              depthTest={false}
+              depthTest
               depthWrite={false}
               toneMapped={false}
             />

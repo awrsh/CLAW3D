@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
@@ -11,6 +12,7 @@ import type { OfficeAgent } from "@/features/office/core/agents";
 import {
   createWorkspaceUnit,
   DEFAULT_BUILDING,
+  getSelectedObject,
   normalizeBuilding,
   STORAGE_KEY,
   type BuildingConfig,
@@ -43,8 +45,13 @@ import { RoomToolsPanel } from "@/features/office/tools/RoomToolsPanel";
 import {
   GhostButton,
   SegmentedControl,
+  AnimatedPanel,
   studioPanelClass,
 } from "@/features/office/ui/studioControls";
+import {
+  PERFORMANCE_MODE_OPTIONS,
+  PERFORMANCE_PROFILES,
+} from "@/features/office/core/performanceMode";
 import type {
   AgentFocusRequest,
   ForcedChatRequest,
@@ -56,7 +63,7 @@ const OfficeScene = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full w-full items-center justify-center bg-[#1a1008] font-mono text-[10px] uppercase tracking-[0.22em] text-amber-500/65">
+      <div className="flex h-full w-full items-center justify-center bg-studio-bg font-mono text-[10px] uppercase tracking-[0.22em] text-studio-text-muted">
         Loading scene…
       </div>
     ),
@@ -147,6 +154,10 @@ export function OfficeStudio() {
   const [forcedChatRequest, setForcedChatRequest] =
     useState<ForcedChatRequest | null>(null);
   const [focusAgentId, setFocusAgentId] = useState<string | null>(null);
+
+  const selectedObject = building.selectedObjectId
+    ? getSelectedObject(building)
+    : null;
 
   const buildingRef = useRef(building);
   const pipelineRef = useRef(pipeline);
@@ -536,7 +547,7 @@ export function OfficeStudio() {
   };
 
   return (
-    <main className="relative h-dvh w-full overflow-hidden bg-[#1a1008]">
+    <main className="relative h-dvh w-full overflow-hidden bg-studio-bg">
       <OfficeScene
         key={sceneKey}
         building={building}
@@ -799,8 +810,8 @@ export function OfficeStudio() {
       />
 
       {contextLost ? (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#120e08]/90 p-6 backdrop-blur-sm">
-          <div className="max-w-md rounded-lg border border-amber-800/30 bg-[#120e08]/95 p-5 font-mono text-sm text-amber-100 shadow-xl">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-studio-surface/90 p-6 backdrop-blur-sm">
+          <div className="max-w-md rounded-lg border border-studio-border bg-studio-surface/95 p-5 font-mono text-sm text-studio-text-heading shadow-xl">
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300/85">
               WebGL context lost
             </div>
@@ -811,7 +822,7 @@ export function OfficeStudio() {
             </p>
             <button
               type="button"
-              className="mt-4 rounded-md border border-amber-500/50 bg-amber-500/90 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[#1a1008]"
+              className="mt-4 rounded-md border border-studio-border-strong bg-studio-accent/90 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-studio-bg"
               onClick={() => {
                 setContextLost(false);
                 setSceneKey((key) => key + 1);
@@ -836,12 +847,22 @@ export function OfficeStudio() {
               : "فقط مشاهده · برای جابه‌جایی «ویرایش» را بزن"}
             {canUndo ? " · Undo ready" : ""}
           </div>
+          <Link
+            href="/laboratory"
+            className="pointer-events-auto mt-2 inline-block text-[10px] font-medium text-teal-400/90 underline-offset-2 hover:text-teal-300 hover:underline"
+          >
+            Pharmaceutical R&amp;D Lab →
+          </Link>
         </div>
 
         <div className="flex flex-col items-end gap-2">
           <div
-            className={`${studioPanelClass} pointer-events-auto flex items-center gap-1 p-1`}
+            className={`${studioPanelClass} pointer-events-auto flex flex-col gap-1.5 p-1.5`}
           >
+            <div className="flex flex-wrap items-center gap-1.5">
+            <span className="px-1 text-[9px] font-semibold tracking-wider text-studio-text-muted">
+              حالت
+            </span>
             <GhostButton
               active={building.editMode}
               onClick={() => {
@@ -861,38 +882,12 @@ export function OfficeStudio() {
                   : "ورود به ویرایش — جابه‌جایی و تغییر فیچرها"
               }
             >
-              ویرایش
+              {building.editMode ? "در حال ویرایش" : "مشاهده"}
             </GhostButton>
-            <GhostButton
-              active={toolsOpen}
-              onClick={() => {
-                setToolsOpen((open) => {
-                  const next = !open;
-                  if (next) {
-                    setBuilding((current) => ({
-                      ...current,
-                      editMode: true,
-                    }));
-                  }
-                  return next;
-                });
-              }}
-              title={toolsOpen ? "بستن Tools" : "باز کردن Tools"}
-            >
-              Tools
-            </GhostButton>
-            <GhostButton
-              active={todosOpen}
-              onClick={() => setTodosOpen((open) => !open)}
-              title={todosOpen ? "بستن Todos" : "باز کردن Todos"}
-              className={
-                todosOpen
-                  ? "border-sky-500/45 bg-sky-500/25 text-sky-100"
-                  : undefined
-              }
-            >
-              Todos
-            </GhostButton>
+            <span className="mx-0.5 h-4 w-px bg-studio-border-subtle" />
+            <span className="px-1 text-[9px] font-semibold tracking-wider text-studio-text-muted">
+              رسم
+            </span>
             <GhostButton
               active={building.drawMode === "workspace"}
               onClick={() => {
@@ -908,6 +903,41 @@ export function OfficeStudio() {
             >
               محیط کاری
             </GhostButton>
+            <span className="mx-0.5 h-4 w-px bg-studio-border-subtle" />
+            <span className="px-1 text-[9px] font-semibold tracking-wider text-studio-text-muted">
+              پنل‌ها
+            </span>
+            <GhostButton
+              active={toolsOpen}
+              onClick={() => {
+                setToolsOpen((open) => {
+                  const next = !open;
+                  if (next) {
+                    setBuilding((current) => ({
+                      ...current,
+                      editMode: true,
+                    }));
+                  }
+                  return next;
+                });
+              }}
+              title={toolsOpen ? "بستن ابزارها" : "باز کردن ابزارها"}
+            >
+              ابزارها
+            </GhostButton>
+            <GhostButton
+              active={todosOpen}
+              onClick={() => setTodosOpen((open) => !open)}
+              title={todosOpen ? "بستن تسک‌ها" : "باز کردن تسک‌ها"}
+              className={
+                todosOpen
+                  ? "border-sky-500/45 bg-sky-500/25 text-sky-100"
+                  : undefined
+              }
+            >
+              تسک‌ها
+            </GhostButton>
+            <span className="mx-0.5 h-4 w-px bg-studio-border-subtle" />
             <GhostButton
               disabled={!canUndo}
               onClick={undo}
@@ -915,10 +945,19 @@ export function OfficeStudio() {
             >
               Undo
             </GhostButton>
-            <span className="mx-1 h-4 w-px bg-amber-900/30" />
-            <span className="px-2 text-[9px] font-semibold tracking-wider text-amber-500/50">
-              Sample
-            </span>
+            </div>
+            <SegmentedControl
+              size="sm"
+              value={building.performanceMode}
+              onChange={(mode) => {
+                setBuilding((current) => ({ ...current, performanceMode: mode }));
+                pushToast(
+                  `کیفیت رندر: ${PERFORMANCE_PROFILES[mode].label}`,
+                );
+              }}
+              options={PERFORMANCE_MODE_OPTIONS}
+              className="min-w-48"
+            />
           </div>
 
           {building.drawMode === "workspace" ? (
@@ -979,34 +1018,60 @@ export function OfficeStudio() {
         </div>
       </div>
 
-      <div
-        className={`pointer-events-none absolute z-20 flex max-w-xs flex-col gap-1.5 ${
-          todosOpen ? "bottom-4 left-4" : "bottom-4 right-4"
-        }`}
-      >
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
+        <div className="flex max-w-md flex-col items-center gap-1.5">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className="rounded-full border border-amber-800/25 bg-[#120e08]/90 px-3.5 py-1.5 text-[11px] text-amber-100 shadow-lg backdrop-blur-md"
+            className="studio-toast-enter rounded-full border border-studio-border bg-studio-surface/90 px-3.5 py-1.5 text-[11px] text-studio-text-heading shadow-lg backdrop-blur-md"
           >
             {toast.message}
           </div>
         ))}
+        </div>
       </div>
 
-      {chatOpen && selectedAgent ? (
-        <div className="pointer-events-none absolute bottom-4 left-4 z-30 flex flex-col items-start gap-2">
-          <AgentChatPanel
-            agent={selectedAgent}
-            messages={chatByAgent[selectedAgent.id] ?? []}
-            onSend={sendAgentChat}
-            onAssistantMessage={commitAssistantChat}
-            onClose={() => {
-              setChatOpen(false);
-              setSelectedAgent(null);
-            }}
-          />
+      {building.editMode && selectedObject && building.drawMode === "none" ? (
+        <div className="pointer-events-none absolute bottom-16 left-1/2 z-[15] -translate-x-1/2">
+          <div
+            className={`${studioPanelClass} pointer-events-auto flex max-w-[min(92vw,520px)] flex-wrap items-center justify-center gap-x-3 gap-y-1 px-3 py-2 text-[10px] text-amber-200/85`}
+          >
+            <span className="font-semibold text-amber-100">
+              {getObjectLabel(selectedObject.type)}
+            </span>
+            <span className="text-amber-500/55">·</span>
+            <span>کلیک + درگ برای جابه‌جایی</span>
+            <span className="text-amber-500/55">·</span>
+            <button
+              type="button"
+              onClick={() => setToolsOpen(true)}
+              className="rounded-md border border-amber-500/35 bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-100 transition hover:bg-amber-500/25"
+            >
+              تنظیمات در ابزارها
+            </button>
+          </div>
         </div>
+      ) : null}
+
+      {selectedAgent ? (
+        <AnimatedPanel
+          open={chatOpen}
+          variant="fade-up"
+          className="pointer-events-none absolute bottom-4 left-4 z-30 flex flex-col items-start gap-2"
+        >
+          <div className="pointer-events-auto">
+            <AgentChatPanel
+              agent={selectedAgent}
+              messages={chatByAgent[selectedAgent.id] ?? []}
+              onSend={sendAgentChat}
+              onAssistantMessage={commitAssistantChat}
+              onClose={() => {
+                setChatOpen(false);
+                setSelectedAgent(null);
+              }}
+            />
+          </div>
+        </AnimatedPanel>
       ) : null}
 
       <WorkTodosPanel
@@ -1067,10 +1132,13 @@ export function OfficeStudio() {
       {!toolsOpen ? (
         <button
           type="button"
-          onClick={() => setToolsOpen(true)}
-          className="pointer-events-auto absolute bottom-4 left-4 z-20 rounded-md border border-amber-800/30 bg-[#120e08]/95 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300/85 shadow-xl backdrop-blur-sm transition hover:border-amber-500/40 hover:bg-amber-500/20"
+          onClick={() => {
+            setToolsOpen(true);
+            setBuilding((current) => ({ ...current, editMode: true }));
+          }}
+          className="pointer-events-auto absolute top-[4.5rem] right-4 z-20 rounded-md border border-studio-border bg-studio-surface/95 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-studio-accent-text shadow-xl backdrop-blur-sm transition hover:border-studio-border-strong hover:bg-studio-accent-soft"
         >
-          Tools
+          ابزارها
         </button>
       ) : null}
     </main>

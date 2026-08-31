@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import {
   getObjectWorldSize,
   isWallType,
@@ -49,6 +49,12 @@ import {
   FurnitureGlbModel,
   hasFurnitureGlb,
 } from "@/features/office/scene/FurnitureGlbModel";
+import {
+  WallRun,
+  type FlutedWallVariant,
+  type WallDetail,
+} from "@/features/office/scene/FlutedWallPanel";
+import { SelectionHighlight } from "@/features/office/scene/SelectionHighlight";
 
 type OfficeObjectsProps = {
   objects: PlacedObject[];
@@ -56,11 +62,48 @@ type OfficeObjectsProps = {
   onSelect?: (objectId: string) => void;
   onDragStart?: (objectId: string) => void;
   lampsOn?: boolean;
+  wallDetail?: WallDetail;
 };
 
 const noop = () => undefined;
 
-function WallMesh({ object }: { object: PlacedObject }) {
+function wallVariant(type: PlacedObject["type"]): FlutedWallVariant {
+  switch (type) {
+    case "wall_glass":
+      return "glass";
+    case "wall_brick":
+      return "brick";
+    case "wall_partition":
+      return "partition";
+    default:
+      return "solid";
+  }
+}
+
+function wallTint(type: PlacedObject["type"]): string | undefined {
+  switch (type) {
+    case "wall_glass":
+      return "#c5d8e8";
+    case "wall_brick":
+      return "#b7aea6";
+    case "wall_drywall":
+      return "#f2f4f6";
+    case "wall_partition":
+      return "#d7dde3";
+    case "wall_solid":
+      return "#eceff1";
+    default:
+      return undefined;
+  }
+}
+
+function WallMesh({
+  object,
+  wallDetail = "simple",
+}: {
+  object: PlacedObject;
+  wallDetail?: WallDetail;
+}) {
   const size = getObjectWorldSize(object.type, object.length);
   const height = size.height;
   const thickness = size.depth;
@@ -110,31 +153,18 @@ function WallMesh({ object }: { object: PlacedObject }) {
   const isGlass = object.type === "wall_glass";
   const isBrick = object.type === "wall_brick";
   const isPartition = object.type === "wall_partition";
-  const isDrywall = object.type === "wall_drywall";
-
-  const color = isGlass
-    ? "#c5d8e8"
-    : isBrick
-      ? "#b7aea6"
-      : isDrywall
-        ? "#f2f4f6"
-        : isPartition
-          ? "#d7dde3"
-          : "#eceff1";
 
   return (
     <group>
-      <mesh position={[0, y, 0]} castShadow receiveShadow>
-        <boxGeometry args={[length, height, thickness]} />
-        <meshStandardMaterial
-          color={color}
-          roughness={isGlass ? 0.08 : isBrick ? 0.88 : 0.65}
-          metalness={isGlass ? 0.25 : isPartition ? 0.2 : 0.03}
-          transparent={isGlass}
-          opacity={isGlass ? 0.28 : 1}
-          envMapIntensity={isGlass ? 1.2 : 0.6}
-        />
-      </mesh>
+      <WallRun
+        span={length}
+        height={height}
+        depth={thickness}
+        color={wallTint(object.type)}
+        variant={wallVariant(object.type)}
+        axis="x"
+        detail={wallDetail}
+      />
 
       {/* Glass mullions */}
       {isGlass
@@ -146,7 +176,7 @@ function WallMesh({ object }: { object: PlacedObject }) {
           ))
         : null}
 
-      {/* Subtle brick courses (modern thin brick) */}
+      {/* Subtle brick course lines */}
       {isBrick
         ? Array.from({ length: 5 }).map((_, row) => (
             <mesh
@@ -159,7 +189,7 @@ function WallMesh({ object }: { object: PlacedObject }) {
           ))
         : null}
 
-      {/* Partition: frosted glass band + metal cap */}
+      {/* Partition: frosted band + metal cap */}
       {isPartition ? (
         <>
           <mesh position={[0, height * 0.55, thickness / 2 + 0.008]}>
@@ -179,8 +209,8 @@ function WallMesh({ object }: { object: PlacedObject }) {
         </>
       ) : null}
 
-      {/* Drywall shadow reveal at base */}
-      {isDrywall || object.type === "wall_solid" ? (
+      {/* Base shadow reveal */}
+      {object.type === "wall_drywall" || object.type === "wall_solid" ? (
         <mesh position={[0, 0.04, thickness / 2 + 0.006]}>
           <boxGeometry args={[length * 0.98, 0.06, 0.01]} />
           <meshStandardMaterial color="#c5ccd3" roughness={0.7} metalness={0.1} />
@@ -311,13 +341,15 @@ function ObjectVisual({
   object,
   selected,
   lampsOn,
+  wallDetail = "simple",
 }: {
   object: PlacedObject;
   selected: boolean;
   lampsOn: boolean;
+  wallDetail?: WallDetail;
 }) {
   if (isWallType(object.type)) {
-    return <WallMesh object={object} />;
+    return <WallMesh object={object} wallDetail={wallDetail} />;
   }
 
   if (hasFurnitureGlb(object.type)) {
@@ -346,14 +378,21 @@ export const OfficeObjects = memo(function OfficeObjects({
   onSelect,
   onDragStart,
   lampsOn = true,
+  wallDetail = "simple",
 }: OfficeObjectsProps) {
+  const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
+
   return (
     <group>
       {objects.map((object) => {
         const selected = object.id === selectedObjectId;
+        const hovered = object.id === hoveredObjectId && !selected;
         const size = getObjectWorldSize(object.type, object.length);
         const wall = isWallType(object.type);
         const usesLegacyAbsolute = !wall && !hasFurnitureGlb(object.type);
+        const highlightWidth = wall ? Math.max(object.length || size.width, 0.6) : size.width;
+        const highlightHeight = Math.max(size.height, 0.5);
+        const highlightDepth = Math.max(size.depth, 0.6);
 
         return (
           <group
@@ -376,17 +415,21 @@ export const OfficeObjects = memo(function OfficeObjects({
               onDragStart?.(object.id);
             }}
             onPointerOver={
-              onDragStart
+              onSelect || onDragStart
                 ? (event) => {
                     event.stopPropagation();
-                    document.body.style.cursor = "grab";
+                    setHoveredObjectId(object.id);
+                    if (onDragStart) document.body.style.cursor = "grab";
                   }
                 : undefined
             }
             onPointerOut={
-              onDragStart
+              onSelect || onDragStart
                 ? () => {
-                    document.body.style.cursor = "default";
+                    setHoveredObjectId((current) =>
+                      current === object.id ? null : current,
+                    );
+                    if (onDragStart) document.body.style.cursor = "default";
                   }
                 : undefined
             }
@@ -395,6 +438,7 @@ export const OfficeObjects = memo(function OfficeObjects({
               object={object}
               selected={selected}
               lampsOn={lampsOn}
+              wallDetail={wallDetail}
             />
             <mesh
               position={
@@ -405,39 +449,23 @@ export const OfficeObjects = memo(function OfficeObjects({
               visible={false}
             >
               <boxGeometry
-                args={[
-                  Math.max(wall ? object.length : size.width, 0.6),
-                  Math.max(size.height, 0.5),
-                  Math.max(size.depth, 0.6),
-                ]}
+                args={[highlightWidth, highlightHeight, highlightDepth]}
               />
               <meshBasicMaterial />
             </mesh>
-            {selected ? (
-              <mesh
-                position={
-                  usesLegacyAbsolute
-                    ? [object.x, 0.03 + object.elevation, object.z]
-                    : [0, 0.03, 0]
-                }
-                rotation={[-Math.PI / 2, 0, 0]}
-              >
-                <ringGeometry
-                  args={[
-                    Math.max(
-                      wall ? object.length * 0.2 : size.width,
-                      size.depth,
-                    ) * 0.55,
-                    Math.max(
-                      wall ? object.length * 0.2 : size.width,
-                      size.depth,
-                    ) * 0.7,
-                    28,
-                  ]}
-                />
-                <meshBasicMaterial color="#c8a97e" transparent opacity={0.9} />
-              </mesh>
-            ) : null}
+            <SelectionHighlight
+              width={highlightWidth}
+              height={highlightHeight}
+              depth={highlightDepth}
+              selected={selected}
+              hovered={hovered}
+              yOffset={usesLegacyAbsolute ? object.elevation : 0}
+              position={
+                usesLegacyAbsolute
+                  ? [object.x, 0, object.z]
+                  : undefined
+              }
+            />
           </group>
         );
       })}

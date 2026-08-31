@@ -12,6 +12,7 @@ import {
 import { OfficeFloor } from "@/features/office/scene/OfficeFloor";
 import { OfficeObjects } from "@/features/office/scene/OfficeObjects";
 import { OfficeWalls } from "@/features/office/scene/OfficeWalls";
+import type { WallDetail } from "@/features/office/scene/FlutedWallPanel";
 
 type OfficeLevelProps = {
   config: FloorConfig;
@@ -36,6 +37,7 @@ type OfficeLevelProps = {
     turns: DialogueTurn[],
   ) => void;
   onWorkSessionDone?: (leadId: string) => void;
+  wallDetail?: WallDetail;
 };
 
 export const OfficeLevel = memo(function OfficeLevel({
@@ -57,6 +59,7 @@ export const OfficeLevel = memo(function OfficeLevel({
   onAgentState,
   onPeerChat,
   onWorkSessionDone,
+  wallDetail = "simple",
 }: OfficeLevelProps) {
   return (
     <group position={[0, y, 0]}>
@@ -65,14 +68,16 @@ export const OfficeLevel = memo(function OfficeLevel({
         selectedWorkspaceId={selectedWorkspaceId}
         onSelectWorkspace={onSelectWorkspace}
         interactive={workspaceInteractive && !dimmed}
+        wallDetail={wallDetail}
       />
-      <OfficeWalls config={config} />
+      <OfficeWalls config={config} wallDetail={wallDetail} />
       <OfficeObjects
         objects={config.objects}
         selectedObjectId={selectedObjectId}
         onSelect={onSelectObject}
         onDragStart={onDragStart}
         lampsOn={lampsOn}
+        wallDetail={wallDetail}
       />
       <AgentSystem
         agents={config.agents ?? []}

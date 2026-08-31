@@ -18,6 +18,17 @@ export type { OfficeAgent } from "@/features/office/core/agents";
 export type { RoomPresetId } from "@/features/office/core/roomPresets";
 export { ROOM_PRESETS, getRoomPreset } from "@/features/office/core/roomPresets";
 import { fitPresetToWorkspace } from "@/features/office/core/roomPresets";
+import {
+  normalizePerformanceMode,
+  type PerformanceMode,
+} from "@/features/office/core/performanceMode";
+
+export type { PerformanceMode } from "@/features/office/core/performanceMode";
+export {
+  normalizePerformanceMode,
+  PERFORMANCE_MODE_OPTIONS,
+  PERFORMANCE_PROFILES,
+} from "@/features/office/core/performanceMode";
 
 export type WorkspaceShape = "rectangle" | "square";
 
@@ -127,6 +138,8 @@ export type BuildingConfig = {
   workspaceWithWalls: boolean;
   /** Wall/door type used when drawMode === "wall". */
   drawWallType: DrawWallType;
+  /** Canvas render quality preset. */
+  performanceMode: PerformanceMode;
 };
 
 const baseRoom = {
@@ -187,6 +200,7 @@ export const DEFAULT_BUILDING: BuildingConfig = {
   workspaceShape: "rectangle",
   workspaceWithWalls: true,
   drawWallType: "wall_drywall",
+  performanceMode: "balanced",
 };
 
 /** Limits used by the Tools panel sliders. */
@@ -593,6 +607,7 @@ export function normalizeBuilding(raw: unknown): BuildingConfig {
           ? data.workspaceWithWalls
           : DEFAULT_BUILDING.workspaceWithWalls,
       drawWallType: normalizeDrawWallType(data.drawWallType),
+      performanceMode: normalizePerformanceMode(data.performanceMode),
     };
   }
 

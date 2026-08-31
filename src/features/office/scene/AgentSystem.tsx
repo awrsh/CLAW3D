@@ -6,6 +6,15 @@ import * as THREE from "three";
 import type { OfficeAgent } from "@/features/office/core/agents";
 import { buildPeerDialogue, type DialogueTurn } from "@/features/office/core/agentDialogue";
 import {
+  pickNextProfessionalActivity,
+  pickPassingGreeting,
+  pickThinkingPhrase,
+  preWalkPauseMs,
+  shouldEmitSoloThought,
+  soloThoughtForActivity,
+  type ProfessionalActivity,
+} from "@/features/office/core/agentBehavior";
+import {
   findNavPath,
   snapToDoorCenterline,
   type NavBounds,
@@ -83,9 +92,22 @@ type RuntimeAgent = OfficeAgent & {
   pendingChatTurns: DialogueTurn[] | null;
   /** Walk back / to assigned desk, then resume working. */
   seekHome: boolean;
+  /** Current professional routine (desk, break, …). */
+  activity: ProfessionalActivity | null;
+  activityUntil: number;
+  /** Pause before starting a walk — human hesitation. */
+  preWalkUntil: number;
+  /** Target facing once arrived (radians). */
+  goalFacing: number | null;
+  /** State to enter when walk completes. */
+  targetState: OfficeAgent["state"] | null;
+  /** Duration to hold activity after arrival. */
+  pendingActivityDuration: number;
+  soloSpeechCooldown: number;
 };
 
-const WALK_SPEED = 1.7;
+const WALK_SPEED = 1.45;
+const WALK_SPEED_VARIANCE = 0.25;
 const ARRIVE_EPS = 0.22;
 const AGENT_RADIUS = 0.18;
 /** Visual body is scaled ~1.35 — keep a clear gap while talking. */
@@ -95,11 +117,13 @@ const PEER_CHAT_DIST = CHAT_PAIR_GAP + 0.45;
 const PEER_APPROACH_DIST = 5.5;
 /** Soft collision so agents never sit inside each other. */
 const MIN_AGENT_GAP = 1.35;
-const PEER_CHAT_COOLDOWN_MS = 28000;
-const TYPE_MS_PER_CHAR = 28;
-const THINK_MS_MIN = 900;
-const THINK_MS_MAX = 1800;
-const HOLD_MS_AFTER_TYPE = 1600;
+const PEER_CHAT_COOLDOWN_MS = 34000;
+const TYPE_MS_PER_CHAR = 32;
+const THINK_MS_MIN = 1100;
+const THINK_MS_MAX = 2400;
+const HOLD_MS_AFTER_TYPE = 2200;
+const SOLO_SPEECH_MS = 3200;
+const PASSING_GREET_MS = 1800;
 const BOUNDS_INSET = 0.55;
 
 function floorBounds(halfW: number, halfD: number): NavBounds {
@@ -196,49 +220,44 @@ function tryMove(
   return null;
 }
 
-function pickRoamPoint(
+function beginProfessionalWalk(
   agent: RuntimeAgent,
   objects: PlacedObject[],
-  bounds: NavBounds,
-): { x: number; z: number; state: OfficeAgent["state"] } {
-  const chairs = objects.filter(
-    (object) =>
-      object.type === "chair" && pointInBounds(object.x, object.z, bounds),
+  halfW: number,
+  halfD: number,
+) {
+  const goal = pickNextProfessionalActivity(
+    agent,
+    objects,
+    agent.roamBounds,
+    agent.activity,
   );
-  const desks = objects.filter(
-    (object) =>
-      (object.type === "desk_cubicle" || object.type === "executive_desk") &&
-      pointInBounds(object.x, object.z, bounds),
+  beginWalkTo(
+    agent,
+    {
+      x: goal.x,
+      z: goal.z,
+      state: goal.state,
+      facing: goal.facing,
+      activity: goal.activity,
+      durationMs: goal.durationMs,
+    },
+    objects,
+    halfW,
+    halfD,
   );
-  const roll = Math.random();
-
-  if (roll < 0.28 && chairs.length > 0) {
-    const chair = chairs[Math.floor(Math.random() * chairs.length)]!;
-    const point = clampToBounds(chair.x, chair.z + 0.55, bounds);
-    return { ...point, state: "sitting" };
-  }
-  if (roll < 0.55 && desks.length > 0) {
-    const desk = desks[Math.floor(Math.random() * desks.length)]!;
-    const point = clampToBounds(desk.x, desk.z + 1.15, bounds);
-    return { ...point, state: "working" };
-  }
-
-  for (let attempt = 0; attempt < 16; attempt += 1) {
-    const x =
-      bounds.minX + Math.random() * Math.max(0.5, bounds.maxX - bounds.minX);
-    const z =
-      bounds.minZ + Math.random() * Math.max(0.5, bounds.maxZ - bounds.minZ);
-    if (!pointHitsBlockers(x, z, AGENT_RADIUS, objects)) {
-      return { x, z, state: "idle" };
-    }
-  }
-  const home = clampToBounds(agent.homeX, agent.homeZ, bounds);
-  return { ...home, state: "idle" };
 }
 
 function beginWalkTo(
   agent: RuntimeAgent,
-  next: { x: number; z: number; state?: OfficeAgent["state"] },
+  next: {
+    x: number;
+    z: number;
+    state?: OfficeAgent["state"];
+    facing?: number;
+    activity?: ProfessionalActivity;
+    durationMs?: number;
+  },
   objects: PlacedObject[],
   halfW: number,
   halfD: number,
@@ -246,6 +265,10 @@ function beginWalkTo(
   const goal = clampToBounds(next.x, next.z, agent.roamBounds);
   agent.targetX = goal.x;
   agent.targetZ = goal.z;
+  agent.goalFacing = next.facing ?? null;
+  agent.targetState = next.state ?? null;
+  if (next.durationMs) agent.pendingActivityDuration = next.durationMs;
+  if (next.activity) agent.activity = next.activity;
   agent.path = findNavPath(
     { x: agent.x, z: agent.z },
     goal,
@@ -257,11 +280,18 @@ function beginWalkTo(
   agent.pathIndex = 0;
   agent.stuckFrames = 0;
   if (agent.path.length === 0) {
-    agent.state = "idle";
-    agent.waitUntil = performance.now() + 500 + Math.random() * 700;
+    agent.state = next.state ?? "idle";
+    if (next.facing != null) agent.facing = next.facing;
+    agent.waitUntil =
+      performance.now() +
+      (next.durationMs ?? 1200 + Math.random() * 1800);
+    if (next.durationMs) {
+      agent.activityUntil = agent.waitUntil;
+    }
     return;
   }
-  agent.state = "walking";
+  agent.preWalkUntil = performance.now() + preWalkPauseMs();
+  agent.state = "idle";
   agent.waitUntil = 0;
 }
 
@@ -274,13 +304,21 @@ function clearSpeech(agent: RuntimeAgent) {
   agent.speechThinkStartedAt = 0;
 }
 
+function emitSoloSpeech(agent: RuntimeAgent, text: string, now: number) {
+  agent.speechPhase = "holding";
+  agent.speechText = text;
+  agent.speechFullText = text;
+  agent.speechUntil = now + SOLO_SPEECH_MS;
+  agent.soloSpeechCooldown = now + SOLO_SPEECH_MS + 18_000;
+}
+
 function beginSpeakTurn(speaker: RuntimeAgent, listener: RuntimeAgent, text: string, now: number) {
   clearSpeech(listener);
   const thinkMs = THINK_MS_MIN + Math.random() * (THINK_MS_MAX - THINK_MS_MIN);
   speaker.speechPhase = "thinking";
   speaker.speechFullText = text;
   speaker.speechCharIndex = 0;
-  speaker.speechText = "…";
+  speaker.speechText = pickThinkingPhrase();
   speaker.speechThinkStartedAt = now;
   speaker.speechNextAt = now + thinkMs;
 }
@@ -453,8 +491,9 @@ function tickDialogue(
   const listener = turn.speaker === "a" ? partner : leader;
 
   if (speaker.speechPhase === "thinking") {
-    const pulse = Math.floor((now - speaker.speechThinkStartedAt) / 400) % 3;
-    speaker.speechText = `فکر می‌کنه${".".repeat(pulse + 1)}`;
+    const base = speaker.speechText.replace(/[.…]+$/u, "");
+    const pulse = Math.floor((now - speaker.speechThinkStartedAt) / 450) % 3;
+    speaker.speechText = `${base}${"…".repeat(pulse + 1)}`;
     if (now >= speaker.speechNextAt) {
       speaker.speechPhase = "typing";
       speaker.speechCharIndex = 0;
@@ -609,6 +648,13 @@ export function AgentSystem({
           speechCharIndex: existing.speechCharIndex ?? 0,
           speechNextAt: existing.speechNextAt ?? 0,
           speechThinkStartedAt: existing.speechThinkStartedAt ?? 0,
+          activity: existing.activity ?? null,
+          activityUntil: existing.activityUntil ?? 0,
+          preWalkUntil: existing.preWalkUntil ?? 0,
+          goalFacing: existing.goalFacing ?? null,
+          targetState: existing.targetState ?? null,
+          pendingActivityDuration: existing.pendingActivityDuration ?? 0,
+          soloSpeechCooldown: existing.soloSpeechCooldown ?? 0,
         };
       }
       const spawn = clampToBounds(agent.x, agent.z, roamBounds);
@@ -638,6 +684,13 @@ export function AgentSystem({
         meetTargetId: null,
         pendingChatTurns: null,
         seekHome: false,
+        activity: null,
+        activityUntil: 0,
+        preWalkUntil: 0,
+        goalFacing: null,
+        targetState: null,
+        pendingActivityDuration: 0,
+        soloSpeechCooldown: 0,
       };
     });
   }, [agents, floorHalfD, floorHalfW, workspaces]);
@@ -732,6 +785,21 @@ export function AgentSystem({
     const live = agentsRef.current;
     const floor = floorBounds(floorHalfW, floorHalfD);
 
+    // Kick off daily routine for new roamers.
+    for (const agent of live) {
+      if (
+        agent.roam &&
+        agent.activityUntil === 0 &&
+        agent.path.length === 0 &&
+        !agent.meetTargetId &&
+        !agent.seekHome &&
+        agent.state !== "chatting"
+      ) {
+        beginProfessionalWalk(agent, blockers, floorHalfW, floorHalfD);
+        agent.activityUntil = now + 1;
+      }
+    }
+
     // Scripted work chat starts only after both walked close enough.
     for (const agent of live) {
       if (!agent.meetTargetId || !agent.pendingChatTurns) continue;
@@ -791,7 +859,7 @@ export function AgentSystem({
           startPeerChat(a, b, now, onPeerChatRef.current);
           onStateRef.current?.(a.id, "chatting");
           onStateRef.current?.(b.id, "chatting");
-        } else if (dist <= PEER_APPROACH_DIST && Math.random() < 0.002) {
+        } else if (dist <= PEER_APPROACH_DIST && Math.random() < 0.0012) {
           a.meetTargetId = b.id;
           b.meetTargetId = a.id;
           a.pendingChatTurns = null;
@@ -827,6 +895,31 @@ export function AgentSystem({
       onStateRef.current?.(partner.id, "chatting");
     }
 
+    // Brief greeting when passing a colleague — no full stop.
+    for (let i = 0; i < live.length; i += 1) {
+      const a = live[i]!;
+      if (
+        a.state !== "walking" ||
+        a.speechUntil > now ||
+        a.meetTargetId
+      ) {
+        continue;
+      }
+      for (let j = i + 1; j < live.length; j += 1) {
+        const b = live[j]!;
+        if (b.state !== "walking" || b.speechUntil > now || b.meetTargetId) {
+          continue;
+        }
+        const dist = Math.hypot(a.x - b.x, a.z - b.z);
+        if (dist > 2.4 || dist < 1.1) continue;
+        if (Math.random() > 0.004) continue;
+        if (now < a.soloSpeechCooldown || now < b.soloSpeechCooldown) continue;
+        emitSoloSpeech(a, pickPassingGreeting(), now);
+        a.soloSpeechCooldown = now + PASSING_GREET_MS + 12_000;
+        break;
+      }
+    }
+
     // Soft collision — keep bodies from nesting into each other.
     separateOverlappingAgents(live);
 
@@ -847,14 +940,36 @@ export function AgentSystem({
         if (partner) tickDialogue(agent, partner, now);
       }
 
+      // Solo muttering while focused — not a full conversation.
+      if (
+        agent.state !== "chatting" &&
+        agent.speechUntil <= now &&
+        agent.speechPhase === "idle" &&
+        shouldEmitSoloThought(
+          agent.activity,
+          agent.state,
+          now,
+          agent.soloSpeechCooldown,
+        )
+      ) {
+        emitSoloSpeech(
+          agent,
+          soloThoughtForActivity(agent.activity, agent.name),
+          now,
+        );
+      }
+
       if (agent.speechUntil > 0 && now >= agent.speechUntil) {
         const wasWorkLead = workLeadRef.current === agent.id;
+        const wasSolo = agent.chatPartnerId == null && agent.chatTurns.length === 0;
         clearSpeech(agent);
         agent.speechUntil = 0;
-        agent.chatPartnerId = null;
-        agent.chatTurns = [];
-        agent.chatTurnIndex = 0;
-        if (agent.state === "chatting") {
+        if (!wasSolo) {
+          agent.chatPartnerId = null;
+          agent.chatTurns = [];
+          agent.chatTurnIndex = 0;
+        }
+        if (agent.state === "chatting" && !wasSolo) {
           agent.roamBounds = floor;
           agent.seekHome = true;
           agent.meetTargetId = null;
@@ -875,7 +990,10 @@ export function AgentSystem({
       }
 
       const pursuing =
-        !!agent.meetTargetId || agent.seekHome || agent.state === "walking";
+        !!agent.meetTargetId ||
+        agent.seekHome ||
+        agent.state === "walking" ||
+        agent.path.length > 0;
 
       if (!agent.roam && !pursuing) {
         const source = agents.find((entry) => entry.id === agent.id);
@@ -885,7 +1003,27 @@ export function AgentSystem({
         continue;
       }
       if (agent.state === "chatting") continue;
+
+      const holdingActivity =
+        !agent.meetTargetId &&
+        !agent.seekHome &&
+        agent.path.length === 0 &&
+        now < agent.activityUntil;
+
+      if (holdingActivity) continue;
+
       if (now < agent.waitUntil && !agent.meetTargetId && !agent.seekHome) {
+        continue;
+      }
+
+      if (
+        agent.roam &&
+        !agent.meetTargetId &&
+        !agent.seekHome &&
+        agent.path.length === 0 &&
+        now >= agent.activityUntil
+      ) {
+        beginProfessionalWalk(agent, blockers, floorHalfW, floorHalfD);
         continue;
       }
 
@@ -961,51 +1099,52 @@ export function AgentSystem({
             floorHalfW,
             floorHalfD,
           );
-          const source = agents.find((entry) => entry.id === agent.id);
-          agent.state = source?.state ?? "idle";
-          onStateRef.current?.(agent.id, agent.state);
-          agent.waitUntil = now + 800;
+          agent.state = "working";
+          agent.activity = "focus_work";
+          agent.activityUntil = now + 35_000 + Math.random() * 40_000;
+          agent.waitUntil = agent.activityUntil;
+          if (agent.goalFacing != null) {
+            agent.facing = agent.goalFacing;
+            agent.goalFacing = null;
+          }
+          onStateRef.current?.(agent.id, "working");
           continue;
         }
 
-        if (agent.state === "walking") {
-          const nearChair = blockers.some(
-            (object) =>
-              object.type === "chair" &&
-              Math.hypot(object.x - agent.x, object.z - agent.z) < 0.9 &&
-              pointInBounds(object.x, object.z, agent.roamBounds),
-          );
-          const nearDesk = blockers.some(
-            (object) =>
-              (object.type === "desk_cubicle" ||
-                object.type === "executive_desk") &&
-              Math.hypot(object.x - agent.x, object.z - agent.z) < 1.5 &&
-              pointInBounds(object.x, object.z, agent.roamBounds),
-          );
-          const nextState = nearChair
-            ? "sitting"
-            : nearDesk
-              ? "working"
-              : "idle";
+        if (agent.state === "walking" || agent.path.length > 0) {
+          if (agent.goalFacing != null) {
+            agent.facing = agent.goalFacing;
+            agent.goalFacing = null;
+          }
+          const nextState = agent.targetState ?? "idle";
+          agent.targetState = null;
+          const holdMs =
+            agent.pendingActivityDuration > 0
+              ? agent.pendingActivityDuration
+              : 8_000 + Math.random() * 12_000;
+          agent.pendingActivityDuration = 0;
           onStateRef.current?.(agent.id, nextState);
           agent.state = nextState;
-          agent.waitUntil = now + 1600 + Math.random() * 2200;
+          agent.activityUntil = now + holdMs;
+          agent.waitUntil = agent.activityUntil;
           agent.path = [];
           agent.pathIndex = 0;
+          agent.preWalkUntil = 0;
         } else if (agent.roam) {
-          beginWalkTo(
-            agent,
-            pickRoamPoint(agent, blockers, agent.roamBounds),
-            blockers,
-            floorHalfW,
-            floorHalfD,
-          );
+          beginProfessionalWalk(agent, blockers, floorHalfW, floorHalfD);
         }
         continue;
       }
 
+      if (agent.path.length > 0 && now < agent.preWalkUntil) {
+        agent.state = "idle";
+        continue;
+      }
+
       agent.state = "walking";
-      const step = WALK_SPEED * dt;
+      const walkSpeed =
+        WALK_SPEED + (Math.sin(now * 0.001 + agent.x) * 0.5 + 0.5) * WALK_SPEED_VARIANCE;
+      const step = walkSpeed * dt;
       const nx = agent.x + (dx / dist) * Math.min(step, dist);
       const nz = agent.z + (dz / dist) * Math.min(step, dist);
       const moved = tryMove(
@@ -1031,13 +1170,7 @@ export function AgentSystem({
           agent.pathIndex = 0;
           agent.stuckFrames = 0;
           if (agent.path.length === 0 && agent.roam && !agent.meetTargetId) {
-            beginWalkTo(
-              agent,
-              pickRoamPoint(agent, blockers, agent.roamBounds),
-              blockers,
-              floorHalfW,
-              floorHalfD,
-            );
+            beginProfessionalWalk(agent, blockers, floorHalfW, floorHalfD);
           }
         }
         continue;

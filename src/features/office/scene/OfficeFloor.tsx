@@ -5,6 +5,7 @@ import type {
   FloorConfig,
   WorkspaceUnit,
 } from "@/features/office/core/roomConfig";
+import { WallRun, type WallDetail } from "@/features/office/scene/FlutedWallPanel";
 
 type OfficeFloorProps = {
   config: Pick<
@@ -21,6 +22,7 @@ type OfficeFloorProps = {
   selectedWorkspaceId?: string | null;
   onSelectWorkspace?: (workspaceId: string) => void;
   interactive?: boolean;
+  wallDetail?: WallDetail;
 };
 
 function WorkspaceSlab({
@@ -30,6 +32,7 @@ function WorkspaceSlab({
   selected,
   interactive,
   onSelect,
+  wallDetail = "simple",
 }: {
   unit: WorkspaceUnit;
   wallHeight: number;
@@ -37,10 +40,10 @@ function WorkspaceSlab({
   selected: boolean;
   interactive: boolean;
   onSelect?: (workspaceId: string) => void;
+  wallDetail?: WallDetail;
 }) {
   const halfW = unit.width / 2;
   const halfD = unit.depth / 2;
-  const wallY = wallHeight / 2;
   const t = Math.min(wallThickness, 0.1);
 
   return (
@@ -82,38 +85,46 @@ function WorkspaceSlab({
 
       {unit.withWalls ? (
         <group>
-          <mesh position={[0, wallY, -halfD]} castShadow receiveShadow>
-            <boxGeometry args={[unit.width, wallHeight, t]} />
-            <meshStandardMaterial
+          <group position={[0, 0, -halfD]}>
+            <WallRun
+              span={unit.width}
+              height={wallHeight}
+              depth={t}
               color={unit.wallColor}
-              roughness={0.72}
-              metalness={0.04}
+              axis="x"
+              detail={wallDetail}
             />
-          </mesh>
-          <mesh position={[0, wallY, halfD]} castShadow receiveShadow>
-            <boxGeometry args={[unit.width, wallHeight, t]} />
-            <meshStandardMaterial
+          </group>
+          <group position={[0, 0, halfD]}>
+            <WallRun
+              span={unit.width}
+              height={wallHeight}
+              depth={t}
               color={unit.wallColor}
-              roughness={0.72}
-              metalness={0.04}
+              axis="x"
+              detail={wallDetail}
             />
-          </mesh>
-          <mesh position={[-halfW, wallY, 0]} castShadow receiveShadow>
-            <boxGeometry args={[t, wallHeight, unit.depth]} />
-            <meshStandardMaterial
+          </group>
+          <group position={[-halfW, 0, 0]}>
+            <WallRun
+              span={unit.depth}
+              height={wallHeight}
+              depth={t}
               color={unit.wallColor}
-              roughness={0.72}
-              metalness={0.04}
+              axis="z"
+              detail={wallDetail}
             />
-          </mesh>
-          <mesh position={[halfW, wallY, 0]} castShadow receiveShadow>
-            <boxGeometry args={[t, wallHeight, unit.depth]} />
-            <meshStandardMaterial
+          </group>
+          <group position={[halfW, 0, 0]}>
+            <WallRun
+              span={unit.depth}
+              height={wallHeight}
+              depth={t}
               color={unit.wallColor}
-              roughness={0.72}
-              metalness={0.04}
+              axis="z"
+              detail={wallDetail}
             />
-          </mesh>
+          </group>
         </group>
       ) : null}
     </group>
@@ -130,6 +141,7 @@ export const OfficeFloor = memo(function OfficeFloor({
   selectedWorkspaceId = null,
   onSelectWorkspace,
   interactive = true,
+  wallDetail = "simple",
 }: OfficeFloorProps) {
   const {
     width,
@@ -224,6 +236,7 @@ export const OfficeFloor = memo(function OfficeFloor({
           selected={unit.id === selectedWorkspaceId}
           interactive={interactive}
           onSelect={onSelectWorkspace}
+          wallDetail={wallDetail}
         />
       ))}
     </group>

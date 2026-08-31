@@ -38,10 +38,10 @@ const formatTimestamp = (timestampMs: number) =>
 
 const STATE_LABEL: Record<OfficeAgent["state"], string> = {
   idle: "آزاد",
-  walking: "در حال راه رفتن",
-  working: "در حال انجام",
-  sitting: "منتظر",
-  chatting: "در حال گفتگو",
+  walking: "در راه",
+  working: "متمرکز روی کار",
+  sitting: "استراحت کوتاه",
+  chatting: "گفتگوی حرفه‌ای",
 };
 
 const THINK_MS = 1100;

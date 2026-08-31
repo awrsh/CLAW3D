@@ -141,6 +141,26 @@
   --font-sans: "Estedad", "Euclid Circular A", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Estedad", "Euclid Circular A", ui-monospace, SFMono-Regular, Menlo,
     Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Studio design tokens */
+  --color-studio-bg: #1a1008;
+  --color-studio-surface: #120e08;
+  --color-studio-surface-elevated: #1c1610;
+  --color-studio-surface-deep: #0e0b07;
+  --color-studio-surface-hover: #261e16;
+  --color-studio-border: rgb(146 64 14 / 0.25);
+  --color-studio-border-subtle: rgb(120 53 15 / 0.2);
+  --color-studio-border-strong: rgb(180 83 9 / 0.35);
+  --color-studio-text: #f5f0e8;
+  --color-studio-text-heading: #fef3c7;
+  --color-studio-text-muted: rgb(245 158 11 / 0.55);
+  --color-studio-text-soft: rgb(254 243 199 / 0.55);
+  --color-studio-accent: #f59e0b;
+  --color-studio-accent-soft: rgb(245 158 11 / 0.25);
+  --color-studio-accent-text: #fde68a;
+  --color-studio-knob: #fff8e8;
+  --shadow-studio-panel: 0 12px 40px rgb(0 0 0 / 0.45);
+  --radius-studio: 0.75rem;
 }
 
 html,
@@ -150,8 +170,8 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #1a1008;
-  color: #f5f0e8;
+  background: var(--color-studio-bg);
+  color: var(--color-studio-text);
   font-family: "Estedad", "Euclid Circular A", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -165,4 +185,60 @@ body > div {
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(180, 120, 40, 0.35) transparent;
+}
+
+/* Panel enter/exit animations */
+.studio-panel-motion {
+  transition:
+    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.studio-panel-hidden.studio-panel-slide-left {
+  opacity: 0;
+  transform: translateX(-18px);
+  pointer-events: none;
+}
+
+.studio-panel-visible.studio-panel-slide-left {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.studio-panel-hidden.studio-panel-slide-right {
+  opacity: 0;
+  transform: translateX(18px);
+  pointer-events: none;
+}
+
+.studio-panel-visible.studio-panel-slide-right {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.studio-panel-hidden.studio-panel-fade-up {
+  opacity: 0;
+  transform: translateY(14px) scale(0.985);
+  pointer-events: none;
+}
+
+.studio-panel-visible.studio-panel-fade-up {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@keyframes studio-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.studio-toast-enter {
+  animation: studio-toast-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }

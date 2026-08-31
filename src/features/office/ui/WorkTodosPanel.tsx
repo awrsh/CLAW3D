@@ -11,6 +11,7 @@ import {
 } from "@/features/office/core/workTodos";
 import {
   GhostButton,
+  AnimatedPanel,
   PanelShell,
 } from "@/features/office/ui/studioControls";
 
@@ -140,8 +141,6 @@ export const WorkTodosPanel = memo(function WorkTodosPanel({
 }: WorkTodosPanelProps) {
   const [draft, setDraft] = useState("");
 
-  if (!open) return null;
-
   const done = pipeline.todos.filter((t) => t.status === "completed").length;
   const total = pipeline.todos.length;
   const busy = pipeline.running;
@@ -165,13 +164,18 @@ export const WorkTodosPanel = memo(function WorkTodosPanel({
   };
 
   return (
-    <PanelShell
-      title="Orchestrator"
-      subtitle={`Todos · ${done}/${total}`}
-      className="absolute bottom-4 right-4 z-20 max-h-[min(78vh,640px)] w-[min(100%-2rem,360px)]"
-      actions={<GhostButton onClick={onClose}>بستن</GhostButton>}
-      bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden"
+    <AnimatedPanel
+      open={open}
+      variant="slide-left"
+      className="absolute bottom-4 left-4 z-20 max-h-[min(78vh,640px)] w-[min(100%-2rem,360px)]"
     >
+      <PanelShell
+        title="Orchestrator"
+        subtitle={`Todos · ${done}/${total}`}
+        className="h-full max-h-[min(78vh,640px)]"
+        actions={<GhostButton onClick={onClose}>بستن</GhostButton>}
+        bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
       <form
         onSubmit={onFormSubmit}
         className="space-y-2 border-b border-amber-900/15 px-3 py-2.5"
@@ -244,5 +248,6 @@ export const WorkTodosPanel = memo(function WorkTodosPanel({
         ))}
       </ul>
     </PanelShell>
+    </AnimatedPanel>
   );
 });

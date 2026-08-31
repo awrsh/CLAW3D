@@ -1,12 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export const studioPanelClass =
-  "pointer-events-auto flex flex-col overflow-hidden rounded-xl border border-amber-800/25 bg-[#120e08]/92 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md";
+  "pointer-events-auto flex flex-col overflow-hidden rounded-xl border border-studio-border bg-studio-surface/92 shadow-studio-panel backdrop-blur-md";
 
 export const studioSurfaceClass =
-  "rounded-lg border border-amber-900/20 bg-[#1c1610]/80";
+  "rounded-lg border border-studio-border-subtle bg-studio-surface-elevated/80";
 
 type PanelShellProps = {
   title: string;
@@ -31,13 +31,13 @@ export function PanelShell({
 }: PanelShellProps) {
   return (
     <aside dir={dir} className={`${studioPanelClass} ${className}`}>
-      <div className="flex items-center justify-between gap-2 border-b border-amber-900/20 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2 border-b border-studio-border-subtle px-3 py-2.5">
         <div className="min-w-0">
-          <div className="truncate text-[11px] font-semibold tracking-wide text-amber-100">
+          <div className="truncate text-[11px] font-semibold tracking-wide text-studio-text-heading">
             {title}
           </div>
           {subtitle ? (
-            <div className="mt-0.5 truncate text-[10px] text-amber-500/60">
+            <div className="mt-0.5 truncate text-[10px] text-studio-text-muted">
               {subtitle}
             </div>
           ) : null}
@@ -48,11 +48,63 @@ export function PanelShell({
       </div>
       <div className={bodyClassName}>{children}</div>
       {footer ? (
-        <div className="border-t border-amber-900/15 px-3 py-2 text-[10px] leading-5 text-amber-500/55">
+        <div className="border-t border-studio-border-subtle/75 px-3 py-2 text-[10px] leading-5 text-studio-text-muted">
           {footer}
         </div>
       ) : null}
     </aside>
+  );
+}
+
+export type PanelMotionVariant = "slide-left" | "slide-right" | "fade-up";
+
+type AnimatedPanelProps = {
+  open: boolean;
+  variant?: PanelMotionVariant;
+  className?: string;
+  children: ReactNode;
+};
+
+/** Mount/unmount wrapper with slide or fade transitions. */
+export function AnimatedPanel({
+  open,
+  variant = "fade-up",
+  className = "",
+  children,
+}: AnimatedPanelProps) {
+  const [mounted, setMounted] = useState(open);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const frame = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setVisible(true));
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    setVisible(false);
+    const timer = window.setTimeout(() => setMounted(false), 280);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  if (!mounted) return null;
+
+  const motionClass =
+    variant === "slide-left"
+      ? "studio-panel-slide-left"
+      : variant === "slide-right"
+        ? "studio-panel-slide-right"
+        : "studio-panel-fade-up";
+
+  return (
+    <div
+      className={`studio-panel-motion ${motionClass} ${
+        visible ? "studio-panel-visible" : "studio-panel-hidden"
+      } ${className}`}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -80,7 +132,7 @@ export function SegmentedControl<T extends string>({
   const pad = size === "sm" ? "px-2 py-1 text-[10px]" : "px-2.5 py-1.5 text-[11px]";
   return (
     <div
-      className={`flex flex-wrap gap-1 rounded-lg border border-amber-900/20 bg-[#0e0b07]/70 p-1 ${className}`}
+      className={`flex flex-wrap gap-1 rounded-lg border border-studio-border-subtle bg-studio-surface-deep/70 p-1 ${className}`}
       role="tablist"
     >
       {options.map((option) => {
@@ -95,8 +147,8 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(option.value)}
             className={`${pad} min-w-0 flex-1 rounded-md font-medium tracking-wide transition ${
               active
-                ? "bg-amber-500/25 text-amber-200 shadow-sm ring-1 ring-amber-500/35"
-                : "text-amber-200/55 hover:bg-[#261e16] hover:text-amber-100"
+                ? "bg-studio-accent-soft text-studio-accent-text shadow-sm ring-1 ring-studio-border-strong"
+                : "text-studio-text-soft hover:bg-studio-surface-hover hover:text-studio-text-heading"
             }`}
           >
             {option.label}
@@ -118,11 +170,11 @@ export function ToggleRow({ label, checked, onChange, hint }: ToggleRowProps) {
   return (
     <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-0.5 py-0.5">
       <span className="min-w-0">
-        <span className="block text-[11px] font-medium text-amber-100">
+        <span className="block text-[11px] font-medium text-studio-text-heading">
           {label}
         </span>
         {hint ? (
-          <span className="mt-0.5 block text-[10px] text-amber-500/50">
+          <span className="mt-0.5 block text-[10px] text-studio-text-muted">
             {hint}
           </span>
         ) : null}
@@ -133,11 +185,13 @@ export function ToggleRow({ label, checked, onChange, hint }: ToggleRowProps) {
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={`relative h-5 w-9 shrink-0 rounded-full transition ${
-          checked ? "bg-amber-500/80" : "bg-amber-950/80 ring-1 ring-amber-800/40"
+          checked
+            ? "bg-studio-accent/80"
+            : "bg-amber-950/80 ring-1 ring-studio-border"
         }`}
       >
         <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-[#fff8e8] shadow transition ${
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-studio-knob shadow transition ${
             checked ? "right-0.5" : "right-4.5"
           }`}
         />
@@ -172,11 +226,13 @@ export function SliderField({
   return (
     <label className="block space-y-1.5">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-medium text-amber-100">{label}</span>
+        <span className="text-[11px] font-medium text-studio-text-heading">
+          {label}
+        </span>
         <span className="font-mono text-[10px] tabular-nums text-amber-400/80">
           {value.toFixed(decimals)}
           {hint ? (
-            <span className="mr-1 text-amber-500/45">{hint}</span>
+            <span className="mr-1 text-studio-text-muted">{hint}</span>
           ) : null}
         </span>
       </div>
@@ -188,7 +244,7 @@ export function SliderField({
         value={value}
         onPointerDown={onEditStart}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-amber-950/60 accent-amber-500"
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-amber-950/60 accent-studio-accent"
       />
       <input
         type="number"
@@ -203,7 +259,7 @@ export function SliderField({
             onChange(Math.min(max, Math.max(min, next)));
           }
         }}
-        className="w-full rounded-lg border border-amber-900/25 bg-[#0e0b07]/80 px-2.5 py-1.5 font-mono text-[11px] text-amber-100 outline-none transition focus:border-amber-500/45"
+        className="w-full rounded-lg border border-studio-border-subtle bg-studio-surface-deep/80 px-2.5 py-1.5 font-mono text-[11px] text-studio-text-heading outline-none transition focus:border-studio-border-strong"
       />
     </label>
   );
@@ -218,19 +274,21 @@ type ColorFieldProps = {
 export function ColorField({ label, value, onChange }: ColorFieldProps) {
   return (
     <label className="flex items-center justify-between gap-3">
-      <span className="text-[11px] font-medium text-amber-100">{label}</span>
+      <span className="text-[11px] font-medium text-studio-text-heading">
+        {label}
+      </span>
       <span className="flex items-center gap-2">
         <input
           type="color"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="h-7 w-9 cursor-pointer rounded-md border border-amber-900/25 bg-transparent p-0.5"
+          className="h-7 w-9 cursor-pointer rounded-md border border-studio-border-subtle bg-transparent p-0.5"
         />
         <input
           type="text"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="w-28 rounded-lg border border-amber-900/25 bg-[#0e0b07]/80 px-2 py-1.5 font-mono text-[11px] text-amber-100 outline-none focus:border-amber-500/45"
+          className="w-28 rounded-lg border border-studio-border-subtle bg-studio-surface-deep/80 px-2 py-1.5 font-mono text-[11px] text-studio-text-heading outline-none focus:border-studio-border-strong"
         />
       </span>
     </label>
@@ -266,10 +324,10 @@ export function GhostButton({
       onClick={onClick}
       className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold tracking-wide transition disabled:opacity-40 ${
         active
-          ? "border-amber-500/45 bg-amber-500/25 text-amber-200"
+          ? "border-studio-border-strong bg-studio-accent-soft text-studio-accent-text"
           : danger
-            ? "border-amber-900/25 bg-[#1c1610] text-amber-200/80 hover:border-red-500/40 hover:text-red-300"
-            : "border-amber-900/25 bg-[#1c1610] text-amber-200/80 hover:border-amber-500/40 hover:bg-[#261e16] hover:text-amber-200"
+            ? "border-studio-border-subtle bg-studio-surface-elevated text-studio-text-soft hover:border-red-500/40 hover:text-red-300"
+            : "border-studio-border-subtle bg-studio-surface-elevated text-studio-text-soft hover:border-studio-border-strong hover:bg-studio-surface-hover hover:text-studio-text-heading"
       } ${className}`}
     >
       {children}
@@ -285,7 +343,7 @@ type SectionLabelProps = {
 export function SectionLabel({ children, action }: SectionLabelProps) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <div className="text-[10px] font-semibold tracking-[0.14em] text-amber-500/65">
+      <div className="text-[10px] font-semibold tracking-[0.14em] text-studio-text-muted">
         {children}
       </div>
       {action}
@@ -299,7 +357,7 @@ type EmptyHintProps = {
 
 export function EmptyHint({ children }: EmptyHintProps) {
   return (
-    <div className="rounded-lg border border-dashed border-amber-900/30 px-3 py-3 text-center text-[10px] leading-5 text-amber-500/55">
+    <div className="rounded-lg border border-dashed border-studio-border-subtle px-3 py-3 text-center text-[10px] leading-5 text-studio-text-muted">
       {children}
     </div>
   );
