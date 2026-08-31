@@ -44,7 +44,7 @@ function defaultPatrol(worker: AreaWorker): { to: [number, number, number]; spee
   const sign = h % 3 === 0 ? -1 : 1;
   return {
     to: axis === "x" ? [sign * dist, 0, 0] : [0, 0, sign * dist],
-    speed: 0.35 + (h % 6) * 0.08,
+    speed: 1.05 + (h % 5) * 0.14,
   };
 }
 
@@ -105,7 +105,7 @@ export const FactoryWorker = memo(function FactoryWorker({
       leftLegRef,
       rightLegRef,
       waypoints,
-      speed: patrol?.speed ?? 0,
+      speed: patrol?.speed ?? 1.1,
       baseYaw: worker.rotation ?? 0,
       walking,
       areaOffset,

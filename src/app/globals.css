@@ -242,3 +242,33 @@ body > div {
 .studio-toast-enter {
   animation: studio-toast-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+
+@keyframes factory-panel-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes factory-panel-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.factory-panel-slide-right {
+  animation: factory-panel-slide-right 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.factory-panel-slide-left {
+  animation: factory-panel-slide-left 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

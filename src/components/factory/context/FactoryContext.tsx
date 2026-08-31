@@ -21,6 +21,7 @@ import {
 } from "@/components/factory/simulation/ProductionState";
 import {
   FACTORY_AREA_MAP,
+  getEquipment,
   GUIDED_TOUR_ORDER,
   type CameraViewMode,
 } from "@/components/factory/simulation/factoryLayout";
@@ -168,7 +169,18 @@ export function FactoryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const selectEquipment = useCallback((id: string | null) => {
-    setState((s) => ({ ...s, selectedEquipmentId: id, selectedWorkerId: null }));
+    setState((s) => {
+      if (!id) {
+        return { ...s, selectedEquipmentId: null };
+      }
+      const eq = getEquipment(id);
+      return {
+        ...s,
+        selectedEquipmentId: id,
+        selectedWorkerId: null,
+        selectedAreaId: eq?.areaId ?? s.selectedAreaId,
+      };
+    });
   }, []);
 
   const selectWorker = useCallback((id: string | null) => {

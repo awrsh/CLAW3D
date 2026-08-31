@@ -25,6 +25,10 @@ export type WorkerAnimBinding = {
 
 const bindings = new Map<string, WorkerAnimBinding>();
 
+const _from = new THREE.Vector3();
+const _to = new THREE.Vector3();
+const _pos = new THREE.Vector3();
+
 export function registerWorkerAnimation(binding: WorkerAnimBinding) {
   bindings.set(binding.id, binding);
 }
@@ -33,16 +37,58 @@ export function unregisterWorkerAnimation(id: string) {
   bindings.delete(id);
 }
 
-function yawToward(from: THREE.Vector3, to: THREE.Vector3, baseYaw: number) {
+function yawToward(from: THREE.Vector3, to: THREE.Vector3) {
   const dx = to.x - from.x;
   const dz = to.z - from.z;
-  if (dx * dx + dz * dz < 0.0004) return baseYaw;
-  return Math.atan2(dx, dz) + baseYaw;
+  if (dx * dx + dz * dz < 0.0004) return null;
+  return Math.atan2(dx, dz);
 }
 
-/** Single animation tick for every worker — nav-mesh waypoints, no object clipping. */
+function pathLength(waypoints: THREE.Vector3[]) {
+  let total = 0;
+  for (let i = 0; i < waypoints.length; i++) {
+    const a = waypoints[i]!;
+    const b = waypoints[(i + 1) % waypoints.length]!;
+    total += a.distanceTo(b);
+  }
+  return total;
+}
+
+/** Sample closed patrol path at arc-length distance (meters). */
+function samplePath(
+  waypoints: THREE.Vector3[],
+  offset: THREE.Vector3,
+  distance: number,
+  out: THREE.Vector3,
+): { from: THREE.Vector3; to: THREE.Vector3 } | null {
+  const n = waypoints.length;
+  if (n < 2) return null;
+
+  const total = pathLength(waypoints);
+  if (total < 0.02) return null;
+
+  let d = ((distance % total) + total) % total;
+
+  for (let i = 0; i < n; i++) {
+    const a = waypoints[i]!;
+    const b = waypoints[(i + 1) % n]!;
+    const segLen = a.distanceTo(b);
+    if (d <= segLen || i === n - 1) {
+      const t = segLen > 0.001 ? d / segLen : 0;
+      out.copy(a).lerp(b, t).add(offset);
+      _from.copy(a).add(offset);
+      _to.copy(b).add(offset);
+      return { from: _from, to: _to };
+    }
+    d -= segLen;
+  }
+
+  return null;
+}
+
+/** Single animation tick for every worker — distance-based path following. */
 export function WorkerAnimationLoop() {
-  const progress = useRef(new Map<string, { seg: number; t: number }>());
+  const progress = useRef(new Map<string, { distance: number }>());
 
   useFrame((state, delta) => {
     if (bindings.size === 0) return;
@@ -68,35 +114,29 @@ export function WorkerAnimationLoop() {
       if (!rootRef.current) continue;
 
       if (walking && waypoints.length >= 2) {
-        let state = progress.current.get(entry.id);
-        if (!state) {
-          state = { seg: 0, t: 0 };
-          progress.current.set(entry.id, state);
+        let prog = progress.current.get(entry.id);
+        if (!prog) {
+          prog = { distance: 0 };
+          progress.current.set(entry.id, prog);
         }
 
-        const a = waypoints[state.seg]!;
-        const b = waypoints[(state.seg + 1) % waypoints.length]!;
-        const from = a.clone().add(areaOffset);
-        const to = b.clone().add(areaOffset);
+        prog.distance += Math.max(speed, 0.6) * delta;
 
-        const segLen = from.distanceTo(to);
-        const step = speed * delta;
-        state.t += segLen > 0.01 ? step / segLen : 1;
+        const sample = samplePath(waypoints, areaOffset, prog.distance, _pos);
+        if (sample) {
+          rootRef.current.position.copy(_pos);
 
-        if (state.t >= 1) {
-          state.t = 0;
-          state.seg = (state.seg + 1) % waypoints.length;
+          const targetYaw = yawToward(sample.from, sample.to);
+          if (targetYaw !== null) {
+            rootRef.current.rotation.y = THREE.MathUtils.lerp(
+              rootRef.current.rotation.y,
+              targetYaw,
+              Math.min(1, delta * 10),
+            );
+          }
         }
 
-        rootRef.current.position.lerpVectors(from, to, state.t);
-        const targetYaw = yawToward(from, to, 0);
-        rootRef.current.rotation.y = THREE.MathUtils.lerp(
-          rootRef.current.rotation.y,
-          targetYaw + baseYaw,
-          0.14,
-        );
-
-        const walkCycle = elapsed * speed * 2.2;
+        const walkCycle = elapsed * speed * 2.4;
         if (!useGltfCharacter) {
           const legSwing = Math.sin(walkCycle) * 0.42;
           if (leftLegRef.current) leftLegRef.current.rotation.x = legSwing;
@@ -113,6 +153,11 @@ export function WorkerAnimationLoop() {
         }
       } else {
         progress.current.delete(entry.id);
+        rootRef.current.rotation.y = THREE.MathUtils.lerp(
+          rootRef.current.rotation.y,
+          baseYaw,
+          Math.min(1, delta * 6),
+        );
         if (!useGltfCharacter) {
           if (leftArmRef.current) leftArmRef.current.rotation.z = Math.PI / 2;
           if (rightArmRef.current) rightArmRef.current.rotation.z = -Math.PI / 2;

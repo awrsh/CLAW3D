@@ -8,6 +8,33 @@ function wave(t: number, freq: number, amp: number, phase = 0) {
   return Math.sin(t * freq + phase) * amp;
 }
 
+export type BioreactorSparkMetrics = {
+  temperature: number;
+  pressure: number;
+  dissolvedO2: number;
+  ph: number;
+};
+
+/** Numeric values for sparkline charts (same simulation as live readings). */
+export function getBioreactorSparkMetrics(
+  equipmentId: string,
+  isSimulating: boolean,
+  timeMs: number,
+): BioreactorSparkMetrics {
+  const h = hash(equipmentId);
+  const t = timeMs / 1000;
+  const baseTemp = equipmentId.includes("02") ? 36.8 : 37.0;
+  const basePressure = equipmentId.includes("02") ? 1.18 : 1.22;
+  const running = isSimulating;
+
+  return {
+    temperature: baseTemp + wave(t, 0.07, 0.35, h) + (running ? wave(t, 0.19, 0.12) : 0),
+    pressure: basePressure + wave(t, 0.05, 0.04, h * 0.3) + (running ? 0.02 : 0),
+    dissolvedO2: running ? 42 + wave(t, 0.11, 3.5, h) : 68 + wave(t, 0.08, 1.2, h),
+    ph: running ? 7.05 + wave(t, 0.09, 0.06, h) : 7.12,
+  };
+}
+
 /** Fluctuating bioreactor telemetry for digital-twin dialogs. */
 export function getBioreactorLiveReadings(
   equipmentId: string,

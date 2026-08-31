@@ -27,12 +27,17 @@ function AreaRoomMarker({
   const isActive =
     state.selectedAreaId === areaId ||
     state.activeAreaId === areaId;
+  const uiPanelOpen =
+    Boolean(state.selectedAreaId) ||
+    Boolean(state.selectedEquipmentId) ||
+    Boolean(state.selectedWorkerId);
 
   return (
     <group position={center}>
+      {/* Clickable floor — equipment meshes win raycast when closer */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0.03, 0]}
+        position={[0, 0.02, 0]}
         onClick={(e) => {
           e.stopPropagation();
           selectArea(areaId);
@@ -45,11 +50,11 @@ function AreaRoomMarker({
           document.body.style.cursor = "auto";
         }}
       >
-        <planeGeometry args={[w - 0.8, d - 0.8]} />
+        <planeGeometry args={[w - 0.6, d - 0.6]} />
         <meshBasicMaterial
           color="#38bdf8"
           transparent
-          opacity={isActive ? 0.12 : 0}
+          opacity={isActive ? 0.1 : 0.02}
           depthWrite={false}
         />
       </mesh>
@@ -69,8 +74,8 @@ function AreaRoomMarker({
         center
         distanceFactor={14}
         eps={0.85}
-        zIndexRange={[40, 0]}
-        style={{ pointerEvents: "auto" }}
+        zIndexRange={[10, 0]}
+        style={{ pointerEvents: uiPanelOpen && !isActive ? "none" : "auto", zIndex: 1 }}
         transform={false}
       >
         <button
@@ -79,7 +84,9 @@ function AreaRoomMarker({
           className={`w-[max(130px,min(180px,16vw))] rounded-lg border px-2.5 py-2 text-left shadow-md backdrop-blur-sm transition ${
             isActive
               ? "border-teal-500/60 bg-white/95 ring-1 ring-teal-400/40"
-              : "border-white/70 bg-white/88 hover:bg-white/95"
+              : uiPanelOpen
+                ? "pointer-events-none border-white/50 bg-white/55 opacity-40"
+                : "border-white/70 bg-white/88 hover:bg-white/95"
           }`}
         >
           <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-teal-700">

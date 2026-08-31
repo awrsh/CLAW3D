@@ -5,14 +5,13 @@ import { useCallback, useRef, useState } from "react";
 import { FactoryProvider, useFactory } from "@/components/factory/context/FactoryContext";
 import type { FactoryCameraHandle } from "@/components/factory/FactoryCamera";
 import {
-  AreaInfoPanel,
-  EquipmentInfoPanel,
+  BioreactorTelemetryPanel,
+  ContextualRightPanel,
   FactoryControls,
   FactoryHeader,
   RoomModeBanner,
   SceneViewToggle,
   SimulationControls,
-  WorkerInfoPanel,
 } from "@/components/factory/ui/FactoryHUD";
 import { FactoryLoaderOverlay } from "@/components/factory/ui/FactoryLoader";
 import { useFactoryPerformance } from "@/components/factory/hooks/useFactoryPerformance";
@@ -35,24 +34,28 @@ function FactoryUI({
     <>
       <FactoryHeader />
 
-      <div className="pointer-events-none absolute inset-x-0 top-[4.5rem] z-20 flex justify-center px-4">
+      <div className="pointer-events-none absolute inset-x-0 top-[4.5rem] flex justify-center px-4">
         <RoomModeBanner />
       </div>
 
-      {/* Bottom-center simulation controls */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex justify-center px-4">
+      {/* Side panels — vertically centered, away from bottom controls */}
+      <div className="pointer-events-none absolute left-4 top-[44%] max-h-[min(52vh,420px)] max-w-[min(100%,300px)] -translate-y-1/2 overflow-y-auto">
+        <BioreactorTelemetryPanel />
+      </div>
+      <div className="pointer-events-none absolute right-4 top-[44%] max-h-[min(52vh,420px)] max-w-[min(100%,340px)] -translate-y-1/2 overflow-y-auto">
+        <ContextualRightPanel />
+      </div>
+
+      {/* Bottom bar — controls only, no contextual panels */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-[5.5rem] flex justify-center px-4">
         <SimulationControls />
       </div>
 
-      {/* Minimal corner controls + contextual dialogs */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-between px-4 sm:px-5">
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-between px-4 sm:px-5">
         <div className="pointer-events-auto self-end">
           <SceneViewToggle />
         </div>
-        <div className="pointer-events-auto flex flex-col items-end gap-2">
-          <WorkerInfoPanel />
-          <EquipmentInfoPanel />
-          <AreaInfoPanel />
+        <div className="pointer-events-auto self-end">
           <FactoryControls
             autoRotate={autoRotate}
             onToggleRotate={() => setAutoRotate((v) => !v)}
@@ -84,14 +87,19 @@ export function FactoryExperience() {
       >
         <FactoryLoaderOverlay visible={loading} />
 
-        <FactoryScene
-          perf={perf}
-          autoRotate={false}
-          onReady={handleReady}
-          controlsRef={controlsRef}
-        />
+        <div className="absolute inset-0 z-0">
+          <FactoryScene
+            perf={perf}
+            autoRotate={false}
+            onReady={handleReady}
+            controlsRef={controlsRef}
+          />
+        </div>
 
-        <FactoryUI controlsRef={controlsRef} />
+        {/* All HTML UI above 3D scene labels */}
+        <div className="pointer-events-none absolute inset-0 z-50">
+          <FactoryUI controlsRef={controlsRef} />
+        </div>
       </div>
     </FactoryProvider>
   );

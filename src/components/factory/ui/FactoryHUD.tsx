@@ -14,8 +14,14 @@ import {
   machineStatusLabel,
   resolveMachineStatus,
 } from "@/components/factory/simulation/EquipmentState";
-import { getBioreactorLiveReadings } from "@/components/factory/simulation/bioreactorLiveData";
+import {
+  getBioreactorLiveReadings,
+  getBioreactorSparkMetrics,
+} from "@/components/factory/simulation/bioreactorLiveData";
 import type { EquipmentReading } from "@/components/factory/simulation/ProductionState";
+import { Sparkline } from "@/components/factory/ui/Sparkline";
+
+const SPARKLINE_HISTORY = 36;
 
 export function FactoryHeader() {
   return (
@@ -182,7 +188,7 @@ export function WorkerInfoPanel() {
   const { worker, area } = match;
 
   return (
-    <div className="pointer-events-auto w-[min(100%,300px)] rounded-lg border border-white/60 bg-white/90 p-4 shadow-sm backdrop-blur-sm">
+    <div className="factory-panel-slide-right pointer-events-auto w-[min(100%,300px)] rounded-lg border border-white/60 bg-white/90 p-4 shadow-sm backdrop-blur-sm">
       <button
         type="button"
         onClick={() => selectWorker(null)}
@@ -220,39 +226,146 @@ export function WorkerInfoPanel() {
   );
 }
 
-function useLiveBioreactorReadings(
-  equipmentId: string | null,
-  isSimulating: boolean,
-): EquipmentReading[] | null {
-  const [readings, setReadings] = useState<EquipmentReading[] | null>(null);
+function useBioreactorTelemetry(equipmentId: string | null, isSimulating: boolean) {
+  const [snapshot, setSnapshot] = useState<{
+    readings: EquipmentReading[];
+    history: { temp: number[]; pressure: number[]; do2: number[] };
+  } | null>(null);
 
   useEffect(() => {
     if (!equipmentId?.startsWith("bioreactor")) {
-      setReadings(null);
+      setSnapshot(null);
       return;
     }
+
     const tick = () => {
-      setReadings(getBioreactorLiveReadings(equipmentId, isSimulating, Date.now()));
+      const now = Date.now();
+      const metrics = getBioreactorSparkMetrics(equipmentId, isSimulating, now);
+      setSnapshot((prev) => {
+        const prevHist = prev?.history ?? { temp: [], pressure: [], do2: [] };
+        const push = (arr: number[], v: number) => [...arr, v].slice(-SPARKLINE_HISTORY);
+        return {
+          readings: getBioreactorLiveReadings(equipmentId, isSimulating, now),
+          history: {
+            temp: push(prevHist.temp, metrics.temperature),
+            pressure: push(prevHist.pressure, metrics.pressure),
+            do2: push(prevHist.do2, metrics.dissolvedO2),
+          },
+        };
+      });
     };
     tick();
-    const id = window.setInterval(tick, 750);
+    const id = window.setInterval(tick, 700);
     return () => window.clearInterval(id);
   }, [equipmentId, isSimulating]);
 
-  return readings;
+  return snapshot;
 }
+
+/** Left panel — telemetry for the selected bioreactor only. */
+export function BioreactorTelemetryPanel() {
+  const { state, selectEquipment } = useFactory();
+  const equipmentId =
+    state.selectedEquipmentId?.startsWith("bioreactor") ? state.selectedEquipmentId : null;
+
+  const telemetry = useBioreactorTelemetry(equipmentId, state.isSimulating);
+
+  if (!equipmentId) return null;
+
+  const eq = getEquipment(equipmentId);
+  if (!eq) return null;
+
+  const status = resolveMachineStatus(
+    eq.areaId,
+    state.productionStage,
+    state.isSimulating,
+  );
+
+  return (
+    <div
+      key={equipmentId}
+      className="factory-panel-slide-left pointer-events-auto w-[min(100%,280px)] rounded-lg border border-teal-500/25 bg-slate-900/92 p-3 font-mono text-[10px] text-emerald-400 shadow-lg backdrop-blur-sm"
+    >
+      <button
+        type="button"
+        onClick={() => selectEquipment(null)}
+        className="float-right text-emerald-600 hover:text-emerald-300"
+        aria-label="Close"
+      >
+        ×
+      </button>
+      <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-emerald-600">
+        Bioreactor Telemetry
+      </div>
+      <h2 className="mt-1 text-[11px] font-medium text-emerald-200">{eq.name}</h2>
+      <p className="mt-0.5 text-[8px] text-emerald-800">Live simulated sensor stream</p>
+
+      <div className="mt-2 flex justify-between border-b border-emerald-900/40 pb-2">
+        <span className="text-emerald-700">Status</span>
+        <span className="uppercase text-emerald-300">{machineStatusLabel(status)}</span>
+      </div>
+
+      {telemetry ? (
+        <>
+          <div className="mt-2 space-y-2">
+            {[
+              {
+                label: "Temp °C",
+                value: telemetry.readings.find((r) => r.label === "Temperature")?.value,
+                series: telemetry.history.temp,
+                color: "#34d399",
+              },
+              {
+                label: "O₂ %",
+                value: telemetry.readings.find((r) => r.label === "Dissolved O₂")?.value,
+                series: telemetry.history.do2,
+                color: "#22d3ee",
+              },
+              {
+                label: "Press bar",
+                value: telemetry.readings.find((r) => r.label === "Vessel Pressure")?.value,
+                series: telemetry.history.pressure,
+                color: "#a78bfa",
+              },
+            ].map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[8px] text-emerald-700">{row.label}</div>
+                  <div className="truncate text-emerald-300">{row.value}</div>
+                </div>
+                <Sparkline data={row.series} color={row.color} width={68} height={20} />
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 space-y-1 border-t border-emerald-900/40 pt-2">
+            {telemetry.readings
+              .filter(
+                (r) =>
+                  !["Temperature", "Dissolved O₂", "Vessel Pressure"].includes(r.label),
+              )
+              .map((r) => (
+                <div key={r.label} className="flex justify-between gap-2">
+                  <span className="text-emerald-700">{r.label}</span>
+                  <span className="text-emerald-300">{r.value}</span>
+                </div>
+              ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** @deprecated Use BioreactorTelemetryPanel */
+export { BioreactorTelemetryPanel as BioreactorTwinPanel };
 
 export function EquipmentInfoPanel() {
   const { state, selectEquipment } = useFactory();
   const eq = state.selectedEquipmentId
     ? getEquipment(state.selectedEquipmentId)
     : null;
-  const liveReadings = useLiveBioreactorReadings(
-    state.selectedEquipmentId,
-    state.isSimulating,
-  );
 
-  if (!eq) return null;
+  if (!eq || eq.id.startsWith("bioreactor")) return null;
 
   const area = FACTORY_AREA_MAP[eq.areaId];
   const asset = getFactoryAsset(eq.id);
@@ -261,100 +374,77 @@ export function EquipmentInfoPanel() {
     state.productionStage,
     state.isSimulating,
   );
-  const isBioreactor = eq.id.startsWith("bioreactor");
-  const readings = isBioreactor && liveReadings ? liveReadings : eq.readings;
 
   return (
     <div
-      className={`pointer-events-auto w-[min(100%,320px)] rounded-lg border p-4 shadow-lg backdrop-blur-sm ${
-        isBioreactor
-          ? "border-teal-500/30 bg-slate-900/92 font-mono text-[10px] text-emerald-400"
-          : "border-white/60 bg-white/85 text-xs text-slate-800"
-      }`}
+      key={eq.id}
+      className="factory-panel-slide-right pointer-events-auto w-[min(100%,300px)] rounded-lg border border-white/60 bg-white/85 p-4 text-xs text-slate-800 shadow-lg backdrop-blur-sm"
     >
       <button
         type="button"
         onClick={() => selectEquipment(null)}
-        className={`float-right ${isBioreactor ? "text-emerald-600 hover:text-emerald-300" : "text-slate-400 hover:text-slate-600"}`}
+        className="float-right text-slate-400 hover:text-slate-600"
         aria-label="Close"
       >
         ×
       </button>
-      <div
-        className={`text-[9px] font-semibold uppercase tracking-[0.22em] ${
-          isBioreactor ? "text-emerald-600" : "text-teal-700"
-        }`}
-      >
-        {isBioreactor ? "Live Bioreactor Telemetry" : "Equipment"}
+      <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-teal-700">
+        Equipment
       </div>
-      <h2
-        className={`mt-1 text-base font-medium ${isBioreactor ? "text-emerald-200" : "text-slate-800"}`}
-      >
-        {eq.name}
-      </h2>
-      {!isBioreactor ? (
-        <>
-          <dl className="mt-3 space-y-1.5">
-            <div>
-              <dt className="text-slate-500">Department</dt>
-              <dd className="text-slate-700">{area.name}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Purpose</dt>
-              <dd className="text-slate-700">{eq.purpose}</dd>
-            </div>
-            {asset?.description ? (
-              <div>
-                <dt className="text-slate-500">Description</dt>
-                <dd className="text-slate-600">{asset.description}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </>
-      ) : (
-        <p className="mt-1 text-[9px] text-emerald-700">{area.name}</p>
-      )}
+      <h2 className="mt-1 text-base font-medium text-slate-800">{eq.name}</h2>
+      <dl className="mt-3 space-y-1.5">
+        <div>
+          <dt className="text-slate-500">Department</dt>
+          <dd className="text-slate-700">{area.name}</dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Purpose</dt>
+          <dd className="text-slate-700">{eq.purpose}</dd>
+        </div>
+        {asset?.description ? (
+          <div>
+            <dt className="text-slate-500">Description</dt>
+            <dd className="text-slate-600">{asset.description}</dd>
+          </div>
+        ) : null}
+      </dl>
       <div className="mt-3 space-y-1">
-        <div className={`flex justify-between ${isBioreactor ? "" : "border-t border-slate-100 pt-2"}`}>
-          <span className={isBioreactor ? "text-emerald-700" : "text-slate-500"}>Status</span>
-          <span className={isBioreactor ? "text-emerald-300" : "font-medium uppercase text-teal-700"}>
+        <div className="flex justify-between border-t border-slate-100 pt-2">
+          <span className="text-slate-500">Status</span>
+          <span className="font-medium uppercase text-teal-700">
             {machineStatusLabel(machineStatus)}
           </span>
         </div>
-        {readings.map((r) => (
-          <div key={r.label} className="flex justify-between gap-2 border-t border-emerald-900/40 pt-1">
-            <span className={isBioreactor ? "text-emerald-700" : "text-slate-500"}>{r.label}</span>
-            <span className={isBioreactor ? "text-emerald-300" : "font-mono text-slate-800"}>
-              {r.value}
-            </span>
+        {eq.readings.map((r) => (
+          <div key={r.label} className="flex justify-between gap-2 border-t border-slate-100 pt-1">
+            <span className="text-slate-500">{r.label}</span>
+            <span className="font-mono text-slate-800">{r.value}</span>
           </div>
         ))}
       </div>
-      {isBioreactor ? (
-        <p className="mt-2 text-[8px] text-emerald-800">
-          Live simulated sensor stream — illustrative digital twin data.
-        </p>
-      ) : (
-        <p className="mt-3 text-[9px] text-slate-400">
-          Simulated illustrative data — not real manufacturing instructions.
-        </p>
-      )}
+      <p className="mt-3 text-[9px] text-slate-400">
+        Simulated illustrative data — not real manufacturing instructions.
+      </p>
     </div>
   );
 }
 
 export function AreaInfoPanel() {
   const { state, selectArea, enterRoomView } = useFactory();
-  const areaId = state.selectedAreaId;
-  if (!areaId || state.selectedEquipmentId || state.selectedWorkerId) return null;
+  const areaId = state.selectedAreaId ?? state.activeAreaId;
+  if (!areaId) return null;
 
   const area = FACTORY_AREA_MAP[areaId];
   const tourIndex = state.guidedTourActive ? state.guidedTourIndex : -1;
   const tourArea = tourIndex >= 0 ? GUIDED_TOUR_ORDER[tourIndex] : null;
   const inRoom = state.sceneViewMode === "room" && state.roomAreaId === areaId;
+  const isSimStage = state.isSimulating && state.activeAreaId === areaId;
 
   return (
-    <div className="pointer-events-auto relative w-[min(100%,320px)] rounded-lg border border-white/60 bg-white/85 p-4 shadow-sm backdrop-blur-sm">
+    <div
+      key={areaId}
+      className="factory-panel-slide-right pointer-events-auto relative w-[min(100%,320px)] rounded-lg border border-white/60 bg-white/85 p-4 shadow-sm backdrop-blur-sm"
+    >
       <button
         type="button"
         onClick={() => selectArea(null)}
@@ -364,7 +454,13 @@ export function AreaInfoPanel() {
         ×
       </button>
       <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-teal-700">
-        {state.guidedTourActive ? "Guided Tour" : inRoom ? "3D Room View" : "Department"}
+        {state.guidedTourActive
+          ? "Guided Tour"
+          : inRoom
+            ? "3D Room View"
+            : isSimStage
+              ? "Active Stage"
+              : "Department"}
       </div>
       <h2 className="mt-1 text-base font-medium text-slate-800">{area.name}</h2>
       <p className="mt-1.5 text-xs font-medium text-teal-800/90">{area.purpose}</p>
@@ -387,6 +483,27 @@ export function AreaInfoPanel() {
       ) : null}
     </div>
   );
+}
+
+/**
+ * Single right-side panel — avoids stacking Area + Equipment + Worker on top of each other.
+ * Priority: worker → equipment (non-bioreactor) → department info.
+ */
+export function ContextualRightPanel() {
+  const { state } = useFactory();
+
+  if (state.selectedWorkerId) {
+    return <WorkerInfoPanel />;
+  }
+
+  const eq = state.selectedEquipmentId
+    ? getEquipment(state.selectedEquipmentId)
+    : null;
+  if (eq && !eq.id.startsWith("bioreactor")) {
+    return <EquipmentInfoPanel />;
+  }
+
+  return <AreaInfoPanel />;
 }
 
 export function FactoryControls({
